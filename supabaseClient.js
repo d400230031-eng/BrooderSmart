@@ -1,4 +1,4 @@
-﻿export const SUPABASE_CONFIG = {
+export const SUPABASE_CONFIG = {
   url: "https://shrtuvtzmhhjvpadgmcr.supabase.co",
   anonKey: "sb_publishable_xgTkr-YhiRGNwX_6IY_Qew_QV6tzICa",
   deviceId: "jalak-bali-esp32-01",
@@ -49,7 +49,7 @@ export async function sendDeviceCommand(commandType, payload = {}) {
     device_id: SUPABASE_CONFIG.deviceId,
     command_type: commandType,
     payload,
-    status: "PENDING",
+    status: "pending",
   };
   const res = await fetch(restUrl("/device_commands"), {
     method: "POST",
