@@ -31,7 +31,8 @@ main{margin-left:245px;width:calc(100% - 245px);padding:30px 35px}
 .note{font-size:11px;color:var(--muted)}
 .icon{width:36px;height:36px;display:grid;place-items:center;border-radius:10px;background:#e8f4ed;font-size:19px;margin-bottom:13px}
 .middle{display:grid;grid-template-columns:1.5fr 1fr;gap:16px}
-.camera{background:#172a25;border-radius:10px;aspect-ratio:16/9;display:grid;place-items:center;color:#a6b8b0;text-align:center}
+.camera{position:relative;overflow:hidden;background:#172a25;border-radius:10px;aspect-ratio:16/9;display:grid;place-items:center;color:#a6b8b0;text-align:center}
+.camera img{width:100%;height:100%;object-fit:cover;border-radius:10px;display:none}
 .camera .cam-icon{font-size:37px}
 .camera p{font-size:12px}.camera small{color:#8b9d95}
 .chart-wrap{height:210px;position:relative}
@@ -77,7 +78,7 @@ canvas{width:100%;height:100%}
  <div class="section-title">Monitoring Real-Time</div>
  <section class="middle">
   <div class="card"><div class="card-label">Grafik Perubahan Suhu</div><div class="chart-wrap"><canvas id="chart"></canvas></div><div class="note" id="chart-note">Menunggu data riwayat</div></div>
-  <div class="card"><div class="card-label" style="margin-bottom:14px">Live Camera · ESP32-S3-CAM</div><div class="camera"><div><div class="cam-icon">📷</div><p>Kamera belum terhubung</p><small>Menunggu stream ESP32-S3-CAM</small></div></div><div class="note" style="margin-top:12px" id="cam-status">Status: Menunggu koneksi</div></div>
+  <div class="card"><div class="card-label" style="margin-bottom:14px">Live Camera · ESP32-S3-CAM</div><div class="camera"><img id="cam-feed" alt="Live Camera"><div id="cam-placeholder"><div class="cam-icon">📷</div><p>Kamera belum terhubung</p><small>Menunggu stream ESP32-S3-CAM</small></div></div><div class="note" style="margin-top:12px" id="cam-status">Status: Menunggu koneksi</div></div>
  </section>
  <div class="section-title">Kontrol Perangkat</div>
  <section class="device-grid">
@@ -97,6 +98,7 @@ const $ = id => document.getElementById(id);
 let temperature = null;
 let humidity = null;
 let history = [];
+let activeStreamUrl = "";
 
 function pickTemp(row) {
   if (!row) return null;
@@ -165,6 +167,31 @@ function applyReading(row) {
   draw();
 }
 
+function updateCameraStream(url) {
+  const img = $('cam-feed');
+  const ph = $('cam-placeholder');
+  if (!url) {
+    activeStreamUrl = "";
+    img.style.display = 'none';
+    img.removeAttribute('src');
+    ph.style.display = 'block';
+    $('cam-status').textContent = 'Status: Menunggu koneksi';
+    return;
+  }
+  if (url !== activeStreamUrl) {
+    activeStreamUrl = url;
+    img.onerror = () => {
+      img.style.display = 'none';
+      ph.style.display = 'block';
+      $('cam-status').textContent = `Status: Gagal memuat stream (${url})`;
+    };
+    img.src = url;
+  }
+  img.style.display = 'block';
+  ph.style.display = 'none';
+  $('cam-status').textContent = `Status: Stream aktif (${url})`;
+}
+
 function applyDeviceStatus(statusRow) {
   const badge = $('conn-badge');
   if (!statusRow) {
@@ -181,9 +208,15 @@ function applyDeviceStatus(statusRow) {
     $('target-temp').innerHTML = Number(statusRow.heater_min_c).toFixed(1) + '<small> °C</small>';
     $('setpoint-note').textContent = 'Setpoint dari device_status';
   }
-  if (statusRow.stream_url) {
-    $('cam-status').textContent = `Status: Stream tersedia (${statusRow.stream_url})`;
+  if (statusRow.last_temperature_c != null && temperature === null) {
+    temperature = Number(statusRow.last_temperature_c);
+    updateUI();
   }
+  if (statusRow.last_humidity_pct != null && humidity === null) {
+    humidity = Number(statusRow.last_humidity_pct);
+    updateUI();
+  }
+  updateCameraStream(statusRow.stream_url || "");
   document.querySelectorAll('.device').forEach(el => {
     const key = el.dataset.key;
     if (key && key in statusRow) {
