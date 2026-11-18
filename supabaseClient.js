@@ -36,8 +36,10 @@ export async function fetchDeviceStatus() {
 }
 
 export function evaluateDeviceOnline(statusRow) {
-  if (!statusRow || !statusRow.is_online || !statusRow.updated_at) return false;
-  const lastUpdateMs = Date.parse(statusRow.updated_at);
+  if (!statusRow || !statusRow.is_online) return false;
+  const ts = statusRow.last_seen || statusRow.updated_at;
+  if (!ts) return false;
+  const lastUpdateMs = Date.parse(ts);
   if (Number.isNaN(lastUpdateMs)) return false;
   return (Date.now() - lastUpdateMs) <= SUPABASE_CONFIG.offlineThresholdMs;
 }
@@ -47,7 +49,7 @@ export async function sendDeviceCommand(commandType, payload = {}) {
     device_id: SUPABASE_CONFIG.deviceId,
     command_type: commandType,
     payload,
-    status: "PENDING",
+    status: "pending",
   };
   const res = await fetch(restUrl("/device_commands"), {
     method: "POST",
@@ -60,8 +62,11 @@ export async function sendDeviceCommand(commandType, payload = {}) {
 }
 
 export const commands = {
-  setMode: (controlMode) => sendDeviceCommand("SET_MODE", { control_mode: controlMode }),
-  setSetpoints: (heaterMinC, coolerMaxC) => sendDeviceCommand("SET_SETPOINTS", { heater_min_c: Number(heaterMinC), cooler_max_c: Number(coolerMaxC) }),
+  setMode: (mode) => sendDeviceCommand("SET_MODE", { mode: mode === "MANUAL" ? "MANUAL" : "AUTO" }),
+  setSetpoints: (heaterMinC, coolerMaxC) => sendDeviceCommand("SET_SETPOINTS", {
+    heater_min_c: Number(heaterMinC),
+    cooler_max_c: Number(coolerMaxC),
+  }),
   setRelays: ({ lamp1_on, lamp2_on, fan1_on, fan2_on }) => sendDeviceCommand("SET_RELAYS", {
     lamp1_on: Boolean(lamp1_on),
     lamp2_on: Boolean(lamp2_on),

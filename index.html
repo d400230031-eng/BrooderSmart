@@ -18,10 +18,14 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,
 .nav.active{background:#286c50;color:white}
 .sidebar-bottom{position:absolute;bottom:25px;font-size:11px;color:#a8c9b9;line-height:1.8}
 main{margin-left:245px;width:calc(100% - 245px);padding:30px 35px}
-.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:30px}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:30px;gap:12px;flex-wrap:wrap}
 .top h1{font-size:23px;margin:0 0 7px}.top p{font-size:12px;color:var(--muted);margin:0}
+.top-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .status{background:#e1f5e9;color:#187a4b;padding:9px 13px;border-radius:20px;font-size:11px;font-weight:600}
 .status.offline{background:#fde8e8;color:#b42318}
+.mode-btn,.emerg-btn{border:1px solid var(--line);background:#fff;color:var(--text);padding:8px 12px;border-radius:9px;font-size:11px;font-weight:600;cursor:pointer}
+.mode-btn.active{background:#167c58;color:#fff;border-color:#167c58}
+.emerg-btn{background:#fef2f2;color:#b42318;border-color:#fecaca}
 .section-title{font-size:14px;font-weight:700;margin:25px 0 14px}
 .cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:15px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:19px}
@@ -67,7 +71,15 @@ canvas{width:100%;height:100%}
  <div class="sidebar-bottom">Jalak Bali Monitoring<br>ESP32-S3-CAM · Version 1.0</div>
 </aside>
 <main>
- <header class="top"><div><h1>Dashboard Monitoring</h1><p id="device-sub">Pemantauan kondisi lingkungan anakan Jalak Bali</p></div><div class="status" id="conn-badge">● MENGHUBUNGKAN...</div></header>
+ <header class="top">
+  <div><h1>Dashboard Monitoring</h1><p id="device-sub">Pemantauan kondisi lingkungan anakan Jalak Bali</p></div>
+  <div class="top-actions">
+   <button class="mode-btn active" id="btn-auto" type="button">MODE: AUTO</button>
+   <button class="mode-btn" id="btn-manual" type="button">MODE: MANUAL</button>
+   <button class="emerg-btn" id="btn-emergency" type="button">EMERGENCY OFF</button>
+   <div class="status" id="conn-badge">● MENGHUBUNGKAN...</div>
+  </div>
+ </header>
  <div class="section-title">Kondisi Lingkungan</div>
  <section class="cards">
   <div class="card"><div class="icon">🌡️</div><div class="card-label">Suhu Ruangan</div><div class="metric" id="temp">--.-<small> °C</small></div><div class="note" id="temp-note">Menunggu data sensor</div></div>
@@ -82,10 +94,10 @@ canvas{width:100%;height:100%}
  </section>
  <div class="section-title">Kontrol Perangkat</div>
  <section class="device-grid">
-  <div class="device" data-key="lamp1_on"><div class="device-top"><div class="device-icon">💡</div><button class="toggle"></button></div><h3>Lampu Pemanas 1</h3><p>Relay Channel 1</p><div class="device-state">Status: <b>OFF</b></div></div>
-  <div class="device" data-key="lamp2_on"><div class="device-top"><div class="device-icon">💡</div><button class="toggle"></button></div><h3>Lampu Pemanas 2</h3><p>Relay Channel 2</p><div class="device-state">Status: <b>OFF</b></div></div>
-  <div class="device" data-key="fan1_on"><div class="device-top"><div class="device-icon">🌀</div><button class="toggle"></button></div><h3>Kipas Sirkulasi 1</h3><p>Relay Channel 3</p><div class="device-state">Status: <b>OFF</b></div></div>
-  <div class="device" data-key="fan2_on"><div class="device-top"><div class="device-icon">🌀</div><button class="toggle"></button></div><h3>Kipas Pendingin 2</h3><p>Relay Channel 4</p><div class="device-state">Status: <b>OFF</b></div></div>
+  <div class="device" data-key="lamp1_on"><div class="device-top"><div class="device-icon">💡</div><button class="toggle" type="button"></button></div><h3>Lampu Pemanas 1</h3><p>Relay Channel 1</p><div class="device-state">Status: <b>OFF</b></div></div>
+  <div class="device" data-key="lamp2_on"><div class="device-top"><div class="device-icon">💡</div><button class="toggle" type="button"></button></div><h3>Lampu Pemanas 2</h3><p>Relay Channel 2</p><div class="device-state">Status: <b>OFF</b></div></div>
+  <div class="device" data-key="fan1_on"><div class="device-top"><div class="device-icon">🌀</div><button class="toggle" type="button"></button></div><h3>Kipas Sirkulasi 1</h3><p>Relay Channel 3</p><div class="device-state">Status: <b>OFF</b></div></div>
+  <div class="device" data-key="fan2_on"><div class="device-top"><div class="device-icon">🌀</div><button class="toggle" type="button"></button></div><h3>Kipas Pendingin 2</h3><p>Relay Channel 4</p><div class="device-state">Status: <b>OFF</b></div></div>
  </section>
  <div class="footer"><span>Jalak Bali Smart Monitoring System</span><span id="clock">--:--:--</span></div>
 </main>
@@ -97,21 +109,28 @@ import { SUPABASE_CONFIG, fetchSensorReadings, fetchDeviceStatus, evaluateDevice
 const $ = id => document.getElementById(id);
 let temperature = null;
 let humidity = null;
+let currentMode = "AUTO";
 let history = [];
 let activeStreamUrl = "";
 
 function pickTemp(row) {
   if (!row) return null;
-  const raw = row.temperature_c ?? row.temperature ?? row.temp_c ?? row.temp;
+  const raw = row.temperature_c ?? row.last_temperature_c ?? row.temperature ?? row.temp_c ?? row.temp;
   const num = Number(raw);
   return Number.isFinite(num) ? num : null;
 }
 
 function pickHum(row) {
   if (!row) return null;
-  const raw = row.humidity_pct ?? row.humidity ?? row.hum_pct ?? row.hum;
+  const raw = row.humidity_rh ?? row.last_humidity_rh ?? row.humidity_pct ?? row.last_humidity_pct ?? row.humidity ?? row.hum_pct ?? row.hum;
   const num = Number(raw);
   return Number.isFinite(num) ? num : null;
+}
+
+function syncModeUI(mode) {
+  currentMode = mode === "MANUAL" ? "MANUAL" : "AUTO";
+  $('btn-auto').classList.toggle("active", currentMode === "AUTO");
+  $('btn-manual').classList.toggle("active", currentMode === "MANUAL");
 }
 
 function draw() {
@@ -203,17 +222,20 @@ function applyDeviceStatus(statusRow) {
   const online = evaluateDeviceOnline(statusRow);
   badge.textContent = online ? `● ONLINE (${SUPABASE_CONFIG.deviceId})` : '● OFFLINE';
   badge.classList.toggle('offline', !online);
-  $('system-note').textContent = online ? 'Terhubung ke ESP32-S3' : 'Melewati batas waktu status';
+  if (statusRow.control_mode) syncModeUI(statusRow.control_mode);
+  $('system-note').textContent = online ? `Terhubung (${currentMode}) · ${statusRow.ip_address || ''}` : 'Melewati batas waktu status';
   if (statusRow.heater_min_c != null) {
     $('target-temp').innerHTML = Number(statusRow.heater_min_c).toFixed(1) + '<small> °C</small>';
-    $('setpoint-note').textContent = 'Setpoint dari device_status';
+    $('setpoint-note').textContent = statusRow.cooler_max_c != null ? `Cooler max: ${Number(statusRow.cooler_max_c).toFixed(1)} °C` : 'Setpoint dari device_status';
   }
-  if (statusRow.last_temperature_c != null && temperature === null) {
-    temperature = Number(statusRow.last_temperature_c);
+  const t = pickTemp(statusRow);
+  if (t !== null && temperature === null) {
+    temperature = t;
     updateUI();
   }
-  if (statusRow.last_humidity_pct != null && humidity === null) {
-    humidity = Number(statusRow.last_humidity_pct);
+  const h = pickHum(statusRow);
+  if (h !== null && humidity === null) {
+    humidity = h;
     updateUI();
   }
   updateCameraStream(statusRow.stream_url || "");
@@ -235,6 +257,20 @@ function getRelayStates() {
   });
   return state;
 }
+
+$('btn-auto').addEventListener('click', async () => {
+  syncModeUI("AUTO");
+  try { await commands.setMode("AUTO"); } catch (e) { console.error(e); }
+});
+
+$('btn-manual').addEventListener('click', async () => {
+  syncModeUI("MANUAL");
+  try { await commands.setMode("MANUAL"); } catch (e) { console.error(e); }
+});
+
+$('btn-emergency').addEventListener('click', async () => {
+  try { await commands.emergencyOff(); } catch (e) { console.error(e); }
+});
 
 document.querySelectorAll('.toggle').forEach(btn => btn.addEventListener('click', async () => {
   btn.classList.toggle('on');
