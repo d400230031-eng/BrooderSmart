@@ -12,8 +12,8 @@
 #include "esp_http_server.h"
 #include "board_config.h"
 
-static const char* WIFI_SSID = "GANTI_NAMA_WIFI";
-static const char* WIFI_PASS = "GANTI_PASSWORD_WIFI";
+static const char* WIFI_SSID = "Aryo Sidiq";
+static const char* WIFI_PASS = "cukitooo";
 
 static const char* SUPABASE_URL      = "https://shrtuvtzmhhjvpadgmcr.supabase.co";
 static const char* SUPABASE_ANON_KEY = "sb_publishable_xgTkr-YhiRGNwX_6IY_Qew_QV6tzICa";
