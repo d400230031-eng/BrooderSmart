@@ -249,14 +249,26 @@ void handleWiFiConnection(unsigned long now) {
 }
 
 bool supabaseRequest(const String& pathAndQuery, const char* method, const String& payload, String* responseBody = nullptr) {
-  if (!state.wifiConnected) return false;
-  WiFiClientSecure client; client.setInsecure();
+  if (!state.wifiConnected || WiFi.status() != WL_CONNECTED) return false;
+
+  WiFiClientSecure client;
+  client.setInsecure();
+  client.setTimeout(10); // detik untuk socket/TLS
+
   HTTPClient http;
-  if (!http.begin(client, String(SUPABASE_URL) + pathAndQuery)) return false;
-  http.setTimeout(6000);
+  http.setTimeout(10000); // ms
+  http.setReuse(false);
+
+  if (!http.begin(client, String(SUPABASE_URL) + pathAndQuery)) {
+    Serial.printf("[SB] http.begin failed | heap=%u rssi=%d\n", ESP.getFreeHeap(), WiFi.RSSI());
+    return false;
+  }
+
   http.addHeader("apikey", SUPABASE_ANON_KEY);
   http.addHeader("Authorization", String("Bearer ") + SUPABASE_ANON_KEY);
   http.addHeader("Content-Type", "application/json");
+  http.addHeader("Connection", "close");
+
   int httpCode = -1;
   if (strcmp(method, "GET") == 0) {
     httpCode = http.GET();
@@ -271,12 +283,19 @@ bool supabaseRequest(const String& pathAndQuery, const char* method, const Strin
     http.addHeader("Prefer", "return=minimal");
     httpCode = http.PATCH(payload);
   }
+
   bool ok = (httpCode >= 200 && httpCode < 300);
   if (!ok) {
-    Serial.printf("[SB] %s %s -> HTTP %d\n", method, pathAndQuery.c_str(), httpCode);
+    Serial.printf("[SB] %s %s -> HTTP %d | err=%s | heap=%u maxBlk=%u rssi=%d\n",
+                  method, pathAndQuery.c_str(), httpCode,
+                  http.errorToString(httpCode).c_str(),
+                  ESP.getFreeHeap(), ESP.getMaxAllocHeap(), WiFi.RSSI());
+  } else if (responseBody != nullptr) {
+    *responseBody = http.getString();
   }
-  if (ok && responseBody != nullptr) *responseBody = http.getString();
+
   http.end();
+  client.stop();
   return ok;
 }
 
@@ -329,28 +348,52 @@ void pollPendingCommands() {
   JsonDocument doc;
   if (deserializeJson(doc, resp) || !doc.is<JsonArray>()) return;
   for (JsonObject cmd : doc.as<JsonArray>()) {
-    String cmdId = cmd["id"] | ""; String cmdType = cmd["command_type"] | ""; JsonObject payload = cmd["payload"].as<JsonObject>();
+    String cmdId = cmd["id"] | "";
+    String cmdType = cmd["command_type"] | "";
+    JsonObject payload = cmd["payload"].as<JsonObject>();
     if (cmdId.length() == 0) continue;
+
     if (cmdType == "SET_MODE") {
-      state.mode = (String(payload["control_mode"] | "AUTO") == "MANUAL") ? MODE_MANUAL : MODE_AUTO;
-      saveSettingsToNVS(); markCommandStatus(cmdId, "APPLIED", "Mode diperbarui");
+      const char* rawMode = payload["mode"] | (payload["control_mode"] | "AUTO");
+      state.mode = (String(rawMode) == "MANUAL") ? MODE_MANUAL : MODE_AUTO;
+      saveSettingsToNVS();
+      markCommandStatus(cmdId, "executed", "Mode diperbarui");
     } else if (cmdType == "SET_SETPOINTS") {
-      float hMin = payload["heater_min_c"] | state.heaterMinC; float cMax = payload["cooler_max_c"] | state.coolerMaxC;
+      float hMin = payload["heater_min_c"] | state.heaterMinC;
+      float cMax = payload["cooler_max_c"] | state.coolerMaxC;
       if (hMin >= 15.0f && hMin <= 45.0f && cMax > hMin && cMax < EMERGENCY_MAX_TEMP) {
-        state.heaterMinC = hMin; state.coolerMaxC = cMax; saveSettingsToNVS(); markCommandStatus(cmdId, "APPLIED", "Setpoint disimpan ke NVS");
-      } else { markCommandStatus(cmdId, "REJECTED", "Setpoint di luar batas aman"); }
+        state.heaterMinC = hMin;
+        state.coolerMaxC = cMax;
+        saveSettingsToNVS();
+        markCommandStatus(cmdId, "executed", "Setpoint disimpan ke NVS");
+      } else {
+        markCommandStatus(cmdId, "failed", "Setpoint di luar batas aman");
+      }
     } else if (cmdType == "SET_RELAYS") {
-      if (state.sensorOk && state.temperatureC >= EMERGENCY_MAX_TEMP) { markCommandStatus(cmdId, "REJECTED", "Ditolak: proteksi suhu darurat aktif"); continue; }
-      bool l1 = payload["lamp1_on"] | state.lamp1On; bool l2 = payload["lamp2_on"] | state.lamp2On;
-      bool f1 = payload["fan1_on"] | state.fan1On; bool f2 = payload["fan2_on"] | state.fan2On;
-      if ((l1 || l2) && (f1 || f2)) { markCommandStatus(cmdId, "REJECTED", "Ditolak: lampu & kipas tidak boleh bersamaan"); }
-      else { state.mode = MODE_MANUAL; saveSettingsToNVS(); applyRelaysHardware(l1, l2, f1, f2); markCommandStatus(cmdId, "APPLIED", "Relay manual diterapkan"); }
+      if (state.sensorOk && state.temperatureC >= EMERGENCY_MAX_TEMP) {
+        markCommandStatus(cmdId, "failed", "Ditolak: proteksi suhu darurat aktif");
+        continue;
+      }
+      bool l1 = payload["lamp1_on"] | state.lamp1On;
+      bool l2 = payload["lamp2_on"] | state.lamp2On;
+      bool f1 = payload["fan1_on"] | state.fan1On;
+      bool f2 = payload["fan2_on"] | state.fan2On;
+      if ((l1 || l2) && (f1 || f2)) {
+        markCommandStatus(cmdId, "failed", "Ditolak: lampu & kipas tidak boleh bersamaan");
+      } else {
+        state.mode = MODE_MANUAL;
+        saveSettingsToNVS();
+        applyRelaysHardware(l1, l2, f1, f2);
+        markCommandStatus(cmdId, "executed", "Relay manual diterapkan");
+      }
     } else if (cmdType == "EMERGENCY_OFF") {
-      allRelaysOff(); markCommandStatus(cmdId, "APPLIED", "Semua relay dimatikan");
-    } else { markCommandStatus(cmdId, "REJECTED", "Tipe perintah tidak dikenal"); }
+      allRelaysOff();
+      markCommandStatus(cmdId, "executed", "Semua relay dimatikan");
+    } else {
+      markCommandStatus(cmdId, "failed", "Tipe perintah tidak dikenal");
+    }
   }
 }
-
 void updateOledDisplay() {
   display.clearDisplay(); display.setTextSize(1); display.setTextColor(SSD1306_WHITE); display.setCursor(0, 0);
   if (state.sensorOk) display.printf("T:%.1fC H:%.0f%% %s", state.temperatureC, state.humidityPct, (state.mode == MODE_AUTO) ? "AUTO" : "MAN");
