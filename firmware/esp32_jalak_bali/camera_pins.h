@@ -1,4 +1,4 @@
-﻿#ifndef CAMERA_PINS_H
+#ifndef CAMERA_PINS_H
 #define CAMERA_PINS_H
 
 #if defined(CAMERA_MODEL_ESP32S3_EYE)

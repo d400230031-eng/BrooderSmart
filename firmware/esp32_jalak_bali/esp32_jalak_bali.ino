@@ -1,4 +1,5 @@
-﻿#include <Arduino.h>
+#include <Arduino.h>
+#include "esp_camera.h"
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
@@ -8,7 +9,8 @@
 #include <Adafruit_SSD1306.h>
 #include <DHT.h>
 #include <ArduinoJson.h>
-#include "esp_camera.h"
+#define CAMERA_MODEL_ESP32S3_EYE
+#include "camera_pins.h"
 #include "esp_http_server.h"
 #include "board_config.h"
 
@@ -50,8 +52,78 @@ static const float EMERGENCY_MAX_TEMP = 38.0f;
 DHT dht(PIN_DHT, DHT_TYPE);
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 Preferences prefs;
-static httpd_handle_t camera_httpd = NULL;
 static String g_streamUrl = "";
+
+static httpd_handle_t camera_httpd = NULL;
+
+static esp_err_t stream_handler(httpd_req_t* req) {
+  camera_fb_t* fb = NULL;
+  esp_err_t res = ESP_OK;
+  char part_buf[64];
+
+  res = httpd_resp_set_type(req, "multipart/x-mixed-replace;boundary=123456789000000000000987654321");
+  if (res != ESP_OK) return res;
+
+  while (true) {
+    fb = esp_camera_fb_get();
+    if (!fb) {
+      Serial.println("Camera capture failed");
+      res = ESP_FAIL;
+      break;
+    }
+
+    size_t hlen = snprintf(
+      part_buf, sizeof(part_buf),
+      "--123456789000000000000987654321\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n",
+      (unsigned)fb->len
+    );
+
+    res = httpd_resp_send_chunk(req, part_buf, hlen);
+    if (res == ESP_OK) {
+      res = httpd_resp_send_chunk(req, (const char*)fb->buf, fb->len);
+    }
+    if (res == ESP_OK) {
+      res = httpd_resp_send_chunk(req, "\r\n", 2);
+    }
+
+    esp_camera_fb_return(fb);
+    fb = NULL;
+
+    if (res != ESP_OK) break;
+    delay(1);
+  }
+
+  return res;
+}
+
+void startCameraServer() {
+  if (camera_httpd != NULL) return;
+
+  httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+  config.server_port = 81;
+  config.ctrl_port = 32769;
+  config.stack_size = 8192;
+
+  esp_err_t err = httpd_start(&camera_httpd, &config);
+  if (err != ESP_OK || camera_httpd == NULL) {
+    Serial.printf("httpd_start failed: 0x%x\n", err);
+    camera_httpd = NULL;
+    return;
+  }
+  Serial.println("Camera HTTP server started on port 81");
+
+  httpd_uri_t stream_uri = {
+    .uri = "/stream",
+    .method = HTTP_GET,
+    .handler = stream_handler,
+    .user_ctx = NULL
+  };
+
+  err = httpd_register_uri_handler(camera_httpd, &stream_uri);
+  if (err != ESP_OK) {
+    Serial.printf("httpd_register_uri_handler failed: 0x%x\n", err);
+  }
+}
 
 enum ControlMode { MODE_AUTO, MODE_MANUAL };
 
@@ -80,36 +152,6 @@ struct SystemState {
 
 SystemState state;
 
-static esp_err_t stream_handler(httpd_req_t* req) {
-  camera_fb_t* fb = NULL;
-  esp_err_t res = ESP_OK;
-  char part_buf[64];
-  res = httpd_resp_set_type(req, "multipart/x-mixed-replace;boundary=123456789000000000000987654321");
-  if (res != ESP_OK) return res;
-  while (true) {
-    fb = esp_camera_fb_get();
-    if (!fb) { res = ESP_FAIL; break; }
-    size_t hlen = snprintf(part_buf, sizeof(part_buf),
-      "--123456789000000000000987654321\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n", fb->len);
-    res = httpd_resp_send_chunk(req, part_buf, hlen);
-    if (res == ESP_OK) res = httpd_resp_send_chunk(req, (const char*)fb->buf, fb->len);
-    if (res == ESP_OK) res = httpd_resp_send_chunk(req, "\r\n", 2);
-    esp_camera_fb_return(fb);
-    if (res != ESP_OK) break;
-  }
-  return res;
-}
-
-void startCameraServer() {
-  if (camera_httpd != NULL) return;
-  httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-  config.server_port = 81;
-  httpd_uri_t stream_uri = { .uri = "/stream", .method = HTTP_GET, .handler = stream_handler, .user_ctx = NULL };
-  if (httpd_start(&camera_httpd, &config) == ESP_OK) {
-    httpd_register_uri_handler(camera_httpd, &stream_uri);
-  }
-}
-
 bool initCameraStream() {
   camera_config_t c = {};
   c.ledc_channel = LEDC_CHANNEL_0; c.ledc_timer = LEDC_TIMER_0;
@@ -121,10 +163,13 @@ bool initCameraStream() {
   c.fb_count = psramFound() ? 2 : 1;
   c.grab_mode = psramFound() ? CAMERA_GRAB_LATEST : CAMERA_GRAB_WHEN_EMPTY;
   c.fb_location = psramFound() ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
-  if (esp_camera_init(&c) != ESP_OK) return false;
+  esp_err_t err = esp_camera_init(&c);
+  if (err != ESP_OK) {
+    Serial.printf("esp_camera_init failed: 0x%x\n", err);
+    return false;
+  }
   sensor_t* s = esp_camera_sensor_get();
   if (s && s->id.PID == OV3660_PID) { s->set_vflip(s, 1); s->set_brightness(s, 1); s->set_saturation(s, -2); }
-  startCameraServer();
   return true;
 }
 
@@ -181,9 +226,17 @@ void readDHTAndEvaluateControl() {
 
 void handleWiFiConnection(unsigned long now) {
   if (WiFi.status() == WL_CONNECTED) {
+    bool justConnected = !state.wifiConnected;
     state.wifiConnected = true;
     state.wifiRetryDelayMs = 1000UL;
     g_streamUrl = "http://" + WiFi.localIP().toString() + ":81/stream";
+    if (justConnected) {
+      Serial.print("IP ESP32: ");
+      Serial.println(WiFi.localIP());
+    }
+    if (camera_httpd == NULL) {
+      startCameraServer();
+    }
     return;
   }
   state.wifiConnected = false; state.supabaseReachable = false;
@@ -204,12 +257,24 @@ bool supabaseRequest(const String& pathAndQuery, const char* method, const Strin
   http.addHeader("apikey", SUPABASE_ANON_KEY);
   http.addHeader("Authorization", String("Bearer ") + SUPABASE_ANON_KEY);
   http.addHeader("Content-Type", "application/json");
-  http.addHeader("Prefer", "return=minimal");
   int httpCode = -1;
-  if (strcmp(method, "GET") == 0) httpCode = http.GET();
-  else if (strcmp(method, "POST") == 0) httpCode = http.POST(payload);
-  else if (strcmp(method, "PATCH") == 0) httpCode = http.PATCH(payload);
+  if (strcmp(method, "GET") == 0) {
+    httpCode = http.GET();
+  } else if (strcmp(method, "POST") == 0) {
+    if (pathAndQuery.indexOf("on_conflict=") >= 0) {
+      http.addHeader("Prefer", "resolution=merge-duplicates,return=minimal");
+    } else {
+      http.addHeader("Prefer", "return=minimal");
+    }
+    httpCode = http.POST(payload);
+  } else if (strcmp(method, "PATCH") == 0) {
+    http.addHeader("Prefer", "return=minimal");
+    httpCode = http.PATCH(payload);
+  }
   bool ok = (httpCode >= 200 && httpCode < 300);
+  if (!ok) {
+    Serial.printf("[SB] %s %s -> HTTP %d\n", method, pathAndQuery.c_str(), httpCode);
+  }
   if (ok && responseBody != nullptr) *responseBody = http.getString();
   http.end();
   return ok;
@@ -219,7 +284,7 @@ void sendTelemetryToSupabase() {
   if (!state.wifiConnected) { state.lastSyncStatus = "OFFLINE_WIFI"; return; }
   bool readingSent = true;
   if (state.sensorOk) {
-    StaticJsonDocument<256> docReading;
+    JsonDocument docReading;
     docReading["device_id"] = DEVICE_ID;
     docReading["temperature_c"] = serialized(String(state.temperatureC, 2));
     docReading["humidity_pct"] = serialized(String(state.humidityPct, 2));
@@ -228,17 +293,18 @@ void sendTelemetryToSupabase() {
     String bodyReading; serializeJson(docReading, bodyReading);
     readingSent = supabaseRequest("/rest/v1/sensor_readings", "POST", bodyReading);
   }
-  StaticJsonDocument<512> docStatus;
+  JsonDocument docStatus;
   docStatus["device_id"] = DEVICE_ID;
   docStatus["is_online"] = true;
   docStatus["control_mode"] = (state.mode == MODE_AUTO) ? "AUTO" : "MANUAL";
   docStatus["heater_min_c"] = serialized(String(state.heaterMinC, 1));
   docStatus["cooler_max_c"] = serialized(String(state.coolerMaxC, 1));
+  docStatus["emergency_max_c"] = serialized(String(EMERGENCY_MAX_TEMP, 1));
   docStatus["lamp1_on"] = state.lamp1On; docStatus["lamp2_on"] = state.lamp2On;
   docStatus["fan1_on"] = state.fan1On; docStatus["fan2_on"] = state.fan2On;
   docStatus["sensor_ok"] = state.sensorOk; docStatus["temp_alert"] = state.tempAlert;
   docStatus["wifi_rssi"] = WiFi.RSSI();
-  if (g_streamUrl.length() > 0) docStatus["stream_url"] = g_streamUrl;
+  if (g_streamUrl.length() > 0) docStatus["camera_stream_url"] = g_streamUrl;
   if (state.sensorOk) {
     docStatus["last_temperature_c"] = serialized(String(state.temperatureC, 2));
     docStatus["last_humidity_pct"] = serialized(String(state.humidityPct, 2));
@@ -250,7 +316,7 @@ void sendTelemetryToSupabase() {
 }
 
 void markCommandStatus(const String& cmdId, const char* newStatus, const char* note) {
-  StaticJsonDocument<192> doc; doc["status"] = newStatus; doc["status_note"] = note;
+  JsonDocument doc; doc["status"] = newStatus; doc["status_note"] = note;
   String body; serializeJson(doc, body);
   supabaseRequest("/rest/v1/device_commands?id=eq." + cmdId, "PATCH", body);
 }
@@ -258,12 +324,12 @@ void markCommandStatus(const String& cmdId, const char* newStatus, const char* n
 void pollPendingCommands() {
   if (!state.wifiConnected) return;
   String resp;
-  String query = String("/rest/v1/device_commands?device_id=eq.") + DEVICE_ID + "&status=eq.PENDING&order=created_at.asc&limit=5";
+  String query = String("/rest/v1/device_commands?device_id=eq.") + DEVICE_ID + "&status=eq.pending&order=created_at.asc&limit=5";
   if (!supabaseRequest(query, "GET", "", &resp)) return;
-  StaticJsonDocument<2048> doc;
+  JsonDocument doc;
   if (deserializeJson(doc, resp) || !doc.is<JsonArray>()) return;
   for (JsonObject cmd : doc.as<JsonArray>()) {
-    String cmdId = cmd["id"] | ""; String cmdType = cmd["command_type"] | ""; JsonObject payload = cmd["payload"];
+    String cmdId = cmd["id"] | ""; String cmdType = cmd["command_type"] | ""; JsonObject payload = cmd["payload"].as<JsonObject>();
     if (cmdId.length() == 0) continue;
     if (cmdType == "SET_MODE") {
       state.mode = (String(payload["control_mode"] | "AUTO") == "MANUAL") ? MODE_MANUAL : MODE_AUTO;
