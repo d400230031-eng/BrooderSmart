@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="id">
 <head>
 <meta charset="UTF-8">
@@ -53,37 +53,37 @@ canvas{width:100%;height:100%}
 <body>
 <div class="layout">
 <aside class="sidebar">
- <div class="brand"><div class="logo">🐦</div><div><h2>Jalak Bali</h2><small>SMART MONITORING</small></div></div>
+ <div class="brand"><div class="logo">??</div><div><h2>Jalak Bali</h2><small>SMART MONITORING</small></div></div>
  <div class="nav-title">MENU UTAMA</div>
- <div class="nav active">▦ <span>Dashboard</span></div>
- <div class="nav">◉ <span>Monitoring</span></div>
- <div class="nav">▣ <span>Live Camera</span></div>
- <div class="nav">⚙ <span>Kontrol Perangkat</span></div>
+ <div class="nav active">? <span>Dashboard</span></div>
+ <div class="nav">? <span>Monitoring</span></div>
+ <div class="nav">? <span>Live Camera</span></div>
+ <div class="nav">? <span>Kontrol Perangkat</span></div>
  <div class="nav-title">SISTEM</div>
- <div class="nav">▤ <span>Riwayat Data</span></div>
- <div class="nav">⚙ <span>Pengaturan</span></div>
- <div class="sidebar-bottom">Jalak Bali Monitoring<br>ESP32-S3-CAM · Version 1.0</div>
+ <div class="nav">? <span>Riwayat Data</span></div>
+ <div class="nav">? <span>Pengaturan</span></div>
+ <div class="sidebar-bottom">Jalak Bali Monitoring<br>ESP32-S3-CAM � Version 1.0</div>
 </aside>
 <main>
- <header class="top"><div><h1>Dashboard Monitoring</h1><p>Pemantauan kondisi lingkungan anakan Jalak Bali</p></div><div class="status">● DEMO MODE</div></header>
+ <header class="top"><div><h1>Dashboard Monitoring</h1><p>Pemantauan kondisi lingkungan anakan Jalak Bali</p></div><div class="status">? DEMO MODE</div></header>
  <div class="section-title">Kondisi Lingkungan</div>
  <section class="cards">
-  <div class="card"><div class="icon">🌡️</div><div class="card-label">Suhu Ruangan</div><div class="metric" id="temp">32.5<small> °C</small></div><div class="note">Pembacaan sensor suhu</div></div>
-  <div class="card"><div class="icon">💧</div><div class="card-label">Kelembapan</div><div class="metric" id="hum">65<small> %</small></div><div class="note">Kelembapan udara</div></div>
-  <div class="card"><div class="icon">🎯</div><div class="card-label">Target Suhu</div><div class="metric">32.0<small> °C</small></div><div class="note">Setpoint sementara</div></div>
-  <div class="card"><div class="icon">⚡</div><div class="card-label">Status Sistem</div><div class="metric" id="system" style="font-size:21px;color:#16845a">NORMAL</div><div class="note">Status simulasi</div></div>
+  <div class="card"><div class="icon">???</div><div class="card-label">Suhu Ruangan</div><div class="metric" id="temp">32.5<small> �C</small></div><div class="note">Pembacaan sensor suhu</div></div>
+  <div class="card"><div class="icon">??</div><div class="card-label">Kelembapan</div><div class="metric" id="hum">65<small> %</small></div><div class="note">Kelembapan udara</div></div>
+  <div class="card"><div class="icon">??</div><div class="card-label">Target Suhu</div><div class="metric">32.0<small> �C</small></div><div class="note">Setpoint sementara</div></div>
+  <div class="card"><div class="icon">?</div><div class="card-label">Status Sistem</div><div class="metric" id="system" style="font-size:21px;color:#16845a">NORMAL</div><div class="note">Status simulasi</div></div>
  </section>
  <div class="section-title">Monitoring Real-Time</div>
  <section class="middle">
-  <div class="card"><div class="card-label">Grafik Perubahan Suhu</div><div class="chart-wrap"><canvas id="chart"></canvas></div><div class="note">Data simulasi · Pembaruan berkala</div></div>
-  <div class="card"><div class="card-label" style="margin-bottom:14px">Live Camera · ESP32-S3-CAM</div><div class="camera"><div><div class="cam-icon">📷</div><p>Kamera belum terhubung</p><small>Menunggu stream ESP32-S3-CAM</small></div></div><div class="note" style="margin-top:12px">Status: Menunggu koneksi</div></div>
+  <div class="card"><div class="card-label">Grafik Perubahan Suhu</div><div class="chart-wrap"><canvas id="chart"></canvas></div><div class="note">Data simulasi � Pembaruan berkala</div></div>
+  <div class="card"><div class="card-label" style="margin-bottom:14px">Live Camera � ESP32-S3-CAM</div><div class="camera"><img id="camStream" style="width:100%;height:100%;object-fit:cover;display:none"><div id="camPh"><div class="cam-icon">&#128247;</div><p>Masukkan IP ESP32-S3</p><small>Port 81 /stream</small></div></div><div style="margin-top:10px;display:flex;gap:8px"><input id="camIp" placeholder="192.168.1.50" style="flex:1;padding:6px 10px;border:1px solid #e8eeea;border-radius:8px"><button type="button" id="camBtn" style="padding:6px 12px;border:0;border-radius:8px;background:#167c58;color:#fff;cursor:pointer">Stream</button></div><script>const ipEl=document.getElementById("camIp"),imgEl=document.getElementById("camStream"),phEl=document.getElementById("camPh");if(localStorage.getItem("camIp"))ipEl.value=localStorage.getItem("camIp");function runCam(){const v=ipEl.value.trim();if(!v)return;localStorage.setItem("camIp",v);imgEl.onload=()=>{imgEl.style.display="block";phEl.style.display="none"};imgEl.onerror=()=>{imgEl.style.display="none";phEl.style.display="block"};imgEl.src="http://"+v+":81/stream"}document.getElementById("camBtn").onclick=runCam;if(ipEl.value)runCam();</script></div>
  </section>
  <div class="section-title">Kontrol Perangkat</div>
  <section class="device-grid">
-  <div class="device"><div class="device-top"><div class="device-icon">💡</div><button class="toggle"></button></div><h3>Lampu Pemanas 1</h3><p>Relay Channel 1</p><div class="device-state">Status: <b>OFF</b></div></div>
-  <div class="device"><div class="device-top"><div class="device-icon">💡</div><button class="toggle"></button></div><h3>Lampu Pemanas 2</h3><p>Relay Channel 2</p><div class="device-state">Status: <b>OFF</b></div></div>
-  <div class="device"><div class="device-top"><div class="device-icon">🌀</div><button class="toggle"></button></div><h3>Kipas Sirkulasi 1</h3><p>Relay Channel 3</p><div class="device-state">Status: <b>OFF</b></div></div>
-  <div class="device"><div class="device-top"><div class="device-icon">🌀</div><button class="toggle"></button></div><h3>Kipas Pendingin 2</h3><p>Relay Channel 4</p><div class="device-state">Status: <b>OFF</b></div></div>
+  <div class="device"><div class="device-top"><div class="device-icon">??</div><button class="toggle"></button></div><h3>Lampu Pemanas 1</h3><p>Relay Channel 1</p><div class="device-state">Status: <b>OFF</b></div></div>
+  <div class="device"><div class="device-top"><div class="device-icon">??</div><button class="toggle"></button></div><h3>Lampu Pemanas 2</h3><p>Relay Channel 2</p><div class="device-state">Status: <b>OFF</b></div></div>
+  <div class="device"><div class="device-top"><div class="device-icon">??</div><button class="toggle"></button></div><h3>Kipas Sirkulasi 1</h3><p>Relay Channel 3</p><div class="device-state">Status: <b>OFF</b></div></div>
+  <div class="device"><div class="device-top"><div class="device-icon">??</div><button class="toggle"></button></div><h3>Kipas Pendingin 2</h3><p>Relay Channel 4</p><div class="device-state">Status: <b>OFF</b></div></div>
  </section>
  <div class="footer"><span>Jalak Bali Smart Monitoring System</span><span id="clock">--:--:--</span></div>
 </main>
@@ -98,12 +98,12 @@ function draw(){
  const x=c.getContext('2d');x.scale(d,d);
  const w=r.width,h=r.height,p=25;
  x.clearRect(0,0,w,h);x.font='10px Arial';x.fillStyle='#89958e';
- for(let i=0;i<5;i++){let y=p+i*(h-2*p)/4;x.fillText((35-i)+'°',0,y+3);x.strokeStyle='#edf1ee';x.beginPath();x.moveTo(32,y);x.lineTo(w,y);x.stroke()}
+ for(let i=0;i<5;i++){let y=p+i*(h-2*p)/4;x.fillText((35-i)+'�',0,y+3);x.strokeStyle='#edf1ee';x.beginPath();x.moveTo(32,y);x.lineTo(w,y);x.stroke()}
  x.beginPath();history.forEach((v,i)=>{let xx=35+i*(w-45)/(history.length-1),yy=p+(35-v)*(h-2*p)/5;if(!i)x.moveTo(xx,yy);else x.lineTo(xx,yy)});
  x.strokeStyle='#20865c';x.lineWidth=2.5;x.stroke();
 }
 function update(){
- $('temp').innerHTML=temperature.toFixed(1)+'<small> °C</small>';
+ $('temp').innerHTML=temperature.toFixed(1)+'<small> �C</small>';
  $('hum').innerHTML=humidity.toFixed(0)+'<small> %</small>';
  $('system').textContent=temperature>34?'PERINGATAN':temperature<29?'SUHU RENDAH':'NORMAL';
  $('system').style.color=temperature>34?'#dc6868':'#16845a';
