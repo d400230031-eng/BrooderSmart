@@ -1,430 +1,337 @@
-#include <Arduino.h>
-#include "esp_camera.h"
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
-#include <HTTPClient.h>
-#include <Preferences.h>
-#include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
-#include <DHT.h>
+#include <PubSubClient.h>
 #include <ArduinoJson.h>
-#define CAMERA_MODEL_ESP32S3_EYE
-#include "camera_pins.h"
+#include <DHT.h>
+#include "esp_camera.h"
 #include "esp_http_server.h"
-#include "board_config.h"
 
-static const char* WIFI_SSID = "Aryo Sidiq";
-static const char* WIFI_PASS = "cukitooo";
+const char* WIFI_SSID = "Aryo Sidiq";
+const char* WIFI_PASS = "cukitooo";
 
-static const char* SUPABASE_URL      = "https://shrtuvtzmhhjvpadgmcr.supabase.co";
-static const char* SUPABASE_ANON_KEY = "sb_publishable_xgTkr-YhiRGNwX_6IY_Qew_QV6tzICa";
-static const char* DEVICE_ID         = "jalak-bali-esp32-01";
+const char* MQTT_HOST      = "w13913d1.ala.us-east-1.emqxsl.com";
+const int   MQTT_PORT      = 8883;
+const char* MQTT_CLIENT_ID = "esp32s3-jalak-bali-01";
+const char* MQTT_USER      = "SmartBrooder";
+const char* MQTT_PASS      = "12345678";
 
-static const int PIN_DHT = 14;
-#define DHT_TYPE DHT22
+const char* TOPIC_TELEMETRY = "brooder/jalak/telemetry";
+const char* TOPIC_CMD_RELAY = "brooder/jalak/cmd/relay";
+const char* TOPIC_CMD_MODE  = "brooder/jalak/cmd/mode";
+const char* TOPIC_CMD_TARG  = "brooder/jalak/cmd/target";
+const char* TOPIC_CMD_OFF   = "brooder/jalak/cmd/all_off";
 
-static const int PIN_RELAY_LAMP1 = 47;
-static const int PIN_RELAY_LAMP2 = 48;
-static const int PIN_RELAY_FAN1  = 41;
-static const int PIN_RELAY_FAN2  = 42;
+#define DHTPIN 14
+#define DHTTYPE DHT22
+DHT dht(DHTPIN, DHTTYPE);
 
-static const int PIN_OLED_SDA = 1;
-static const int PIN_OLED_SCL = 2;
-#define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 32
-#define OLED_RESET -1
-#define OLED_ADDR 0x3C
+// CH1 & CH2 = Bohlam (heat), CH3 & CH4 = Kipas (cool)
+const int RELAY_PINS[4] = {41, 42, 47, 48};
+const char* RELAY_TYPES[4] = {"heat", "heat", "fan", "fan"};
+const bool RELAY_ACTIVE_LOW = true;
+bool relayState[4] = {false, false, false, false};
 
-static const int PIN_ENC_CLK = 38;
-static const int PIN_ENC_DT  = 39;
-static const int PIN_ENC_SW  = 40;
+// Pinout kamera umum ESP32-S3 CAM (verifikasi dengan datasheet board kamu)
+#define PWDN_GPIO_NUM  -1
+#define RESET_GPIO_NUM -1
+#define XCLK_GPIO_NUM  15
+#define SIOD_GPIO_NUM  4
+#define SIOC_GPIO_NUM  5
+#define Y9_GPIO_NUM    16
+#define Y8_GPIO_NUM    17
+#define Y7_GPIO_NUM    18
+#define Y6_GPIO_NUM    12
+#define Y5_GPIO_NUM    10
+#define Y4_GPIO_NUM    8
+#define Y3_GPIO_NUM    9
+#define Y2_GPIO_NUM    11
+#define VSYNC_GPIO_NUM 6
+#define HREF_GPIO_NUM  7
+#define PCLK_GPIO_NUM  13
 
-static const unsigned long TELEMETRY_INTERVAL_MS = 15000UL;
-static const unsigned long COMMAND_POLL_MS     = 5000UL;
-static const unsigned long SENSOR_READ_MS      = 2000UL;
-static const unsigned long OLED_REFRESH_MS     = 250UL;
+bool autoMode = true;
+float targetTemp = 33.0;
+const float HYSTERESIS = 0.5;
 
-static const float DEFAULT_HEATER_MIN = 30.0f;
-static const float DEFAULT_COOLER_MAX = 33.0f;
-static const float EMERGENCY_MAX_TEMP = 38.0f;
+float cachedTemp = NAN;
+float cachedHum = NAN;
+unsigned long lastDhtReadMs = 0;
+unsigned long lastPubMs = 0;
+unsigned long lastWifiCheckMs = 0;
+bool cameraReady = false;
 
-DHT dht(PIN_DHT, DHT_TYPE);
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-Preferences prefs;
-static String g_streamUrl = "";
+WiFiClientSecure espClient;
+PubSubClient mqtt(espClient);
+httpd_handle_t jalak_stream_httpd = NULL;
 
-static httpd_handle_t camera_httpd = NULL;
+void writeRelayPin(int idx, bool on) {
+  if (idx < 0 || idx > 3) return;
+  relayState[idx] = on;
+  uint8_t level = RELAY_ACTIVE_LOW ? (on ? LOW : HIGH) : (on ? HIGH : LOW);
+  digitalWrite(RELAY_PINS[idx], level);
+}
 
-static esp_err_t stream_handler(httpd_req_t* req) {
-  camera_fb_t* fb = NULL;
+void setAllRelaysOff() {
+  for (int i = 0; i < 4; i++) {
+    writeRelayPin(i, false);
+  }
+}
+
+bool initCamera() {
+  camera_config_t config;
+  config.ledc_channel = LEDC_CHANNEL_0;
+  config.ledc_timer   = LEDC_TIMER_0;
+  config.pin_d0       = Y2_GPIO_NUM;
+  config.pin_d1       = Y3_GPIO_NUM;
+  config.pin_d2       = Y4_GPIO_NUM;
+  config.pin_d3       = Y5_GPIO_NUM;
+  config.pin_d4       = Y6_GPIO_NUM;
+  config.pin_d5       = Y7_GPIO_NUM;
+  config.pin_d6       = Y8_GPIO_NUM;
+  config.pin_d7       = Y9_GPIO_NUM;
+  config.pin_xclk     = XCLK_GPIO_NUM;
+  config.pin_pclk     = PCLK_GPIO_NUM;
+  config.pin_vsync    = VSYNC_GPIO_NUM;
+  config.pin_href     = HREF_GPIO_NUM;
+  config.pin_sccb_sda = SIOD_GPIO_NUM;
+  config.pin_sccb_scl = SIOC_GPIO_NUM;
+  config.pin_pwdn     = PWDN_GPIO_NUM;
+  config.pin_reset    = RESET_GPIO_NUM;
+  config.xclk_freq_hz = 16000000;
+  config.pixel_format = PIXFORMAT_JPEG;
+
+  if (psramFound()) {
+    config.frame_size   = FRAMESIZE_QVGA;
+    config.jpeg_quality = 18;
+    config.fb_count     = 1;
+    config.grab_mode    = CAMERA_GRAB_LATEST;
+  } else {
+    config.frame_size   = FRAMESIZE_QQVGA;
+    config.jpeg_quality = 20;
+    config.fb_count     = 1;
+    config.grab_mode    = CAMERA_GRAB_WHEN_EMPTY;
+  }
+
+  return (esp_camera_init(&config) == ESP_OK);
+}
+
+static esp_err_t stream_handler(httpd_req_t *req) {
+  if (!cameraReady) {
+    httpd_resp_send_500(req);
+    return ESP_FAIL;
+  }
+
+  camera_fb_t *fb = NULL;
   esp_err_t res = ESP_OK;
   char part_buf[64];
+  static const char* _STREAM_CONTENT_TYPE = "multipart/x-mixed-replace;boundary=123456789000000000000987654321";
+  static const char* _STREAM_BOUNDARY = "\r\n--123456789000000000000987654321\r\n";
+  static const char* _STREAM_PART = "Content-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n";
 
-  res = httpd_resp_set_type(req, "multipart/x-mixed-replace;boundary=123456789000000000000987654321");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  res = httpd_resp_set_type(req, _STREAM_CONTENT_TYPE);
   if (res != ESP_OK) return res;
 
   while (true) {
     fb = esp_camera_fb_get();
     if (!fb) {
-      Serial.println("Camera capture failed");
-      res = ESP_FAIL;
-      break;
+      delay(15);
+      continue;
     }
-
-    size_t hlen = snprintf(
-      part_buf, sizeof(part_buf),
-      "--123456789000000000000987654321\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n",
-      (unsigned)fb->len
-    );
-
-    res = httpd_resp_send_chunk(req, part_buf, hlen);
-    if (res == ESP_OK) {
-      res = httpd_resp_send_chunk(req, (const char*)fb->buf, fb->len);
-    }
-    if (res == ESP_OK) {
-      res = httpd_resp_send_chunk(req, "\r\n", 2);
-    }
-
+    size_t hlen = snprintf(part_buf, sizeof(part_buf), _STREAM_PART, fb->len);
+    res = httpd_resp_send_chunk(req, _STREAM_BOUNDARY, strlen(_STREAM_BOUNDARY));
+    if (res == ESP_OK) res = httpd_resp_send_chunk(req, part_buf, hlen);
+    if (res == ESP_OK) res = httpd_resp_send_chunk(req, (const char *)fb->buf, fb->len);
     esp_camera_fb_return(fb);
-    fb = NULL;
-
     if (res != ESP_OK) break;
-    delay(1);
+    delay(15);
   }
-
   return res;
 }
 
-void startCameraServer() {
-  if (camera_httpd != NULL) return;
-
+void startStreamServer() {
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = 81;
-  config.ctrl_port = 32769;
-  config.stack_size = 8192;
-
-  esp_err_t err = httpd_start(&camera_httpd, &config);
-  if (err != ESP_OK || camera_httpd == NULL) {
-    Serial.printf("httpd_start failed: 0x%x\n", err);
-    camera_httpd = NULL;
-    return;
-  }
-  Serial.println("Camera HTTP server started on port 81");
-
+  config.ctrl_port   = 32769;
   httpd_uri_t stream_uri = {
-    .uri = "/stream",
-    .method = HTTP_GET,
-    .handler = stream_handler,
-    .user_ctx = NULL
+    .uri       = "/stream",
+    .method    = HTTP_GET,
+    .handler   = stream_handler,
+    .user_ctx  = NULL
   };
-
-  err = httpd_register_uri_handler(camera_httpd, &stream_uri);
-  if (err != ESP_OK) {
-    Serial.printf("httpd_register_uri_handler failed: 0x%x\n", err);
-  }
-}
-
-enum ControlMode { MODE_AUTO, MODE_MANUAL };
-
-struct SystemState {
-  float temperatureC = NAN;
-  float humidityPct  = NAN;
-  bool sensorOk      = false;
-  String tempAlert   = "SENSOR_ERROR";
-  ControlMode mode   = MODE_AUTO;
-  float heaterMinC   = DEFAULT_HEATER_MIN;
-  float coolerMaxC   = DEFAULT_COOLER_MAX;
-  bool lamp1On       = false;
-  bool lamp2On       = false;
-  bool fan1On        = false;
-  bool fan2On        = false;
-  bool wifiConnected     = false;
-  bool supabaseReachable = false;
-  String lastSyncStatus  = "INIT";
-  unsigned long wifiRetryDelayMs = 1000UL;
-  unsigned long lastWifiAttemptMs = 0UL;
-  unsigned long lastSensorReadMs = 0UL;
-  unsigned long lastTelemetryMs = 0UL;
-  unsigned long lastCommandPollMs = 0UL;
-  unsigned long lastOledRefreshMs = 0UL;
-};
-
-SystemState state;
-
-bool initCameraStream() {
-  camera_config_t c = {};
-  c.ledc_channel = LEDC_CHANNEL_0; c.ledc_timer = LEDC_TIMER_0;
-  c.pin_d0 = Y2_GPIO_NUM; c.pin_d1 = Y3_GPIO_NUM; c.pin_d2 = Y4_GPIO_NUM; c.pin_d3 = Y5_GPIO_NUM;
-  c.pin_d4 = Y6_GPIO_NUM; c.pin_d5 = Y7_GPIO_NUM; c.pin_d6 = Y8_GPIO_NUM; c.pin_d7 = Y9_GPIO_NUM;
-  c.pin_xclk = XCLK_GPIO_NUM; c.pin_pclk = PCLK_GPIO_NUM; c.pin_vsync = VSYNC_GPIO_NUM; c.pin_href = HREF_GPIO_NUM;
-  c.pin_sccb_sda = SIOD_GPIO_NUM; c.pin_sccb_scl = SIOC_GPIO_NUM; c.pin_pwdn = PWDN_GPIO_NUM; c.pin_reset = RESET_GPIO_NUM;
-  c.xclk_freq_hz = 20000000; c.pixel_format = PIXFORMAT_JPEG; c.frame_size = FRAMESIZE_VGA; c.jpeg_quality = 14;
-  c.fb_count = psramFound() ? 2 : 1;
-  c.grab_mode = psramFound() ? CAMERA_GRAB_LATEST : CAMERA_GRAB_WHEN_EMPTY;
-  c.fb_location = psramFound() ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
-  esp_err_t err = esp_camera_init(&c);
-  if (err != ESP_OK) {
-    Serial.printf("esp_camera_init failed: 0x%x\n", err);
-    return false;
-  }
-  sensor_t* s = esp_camera_sensor_get();
-  if (s && s->id.PID == OV3660_PID) { s->set_vflip(s, 1); s->set_brightness(s, 1); s->set_saturation(s, -2); }
-  return true;
-}
-
-void applyRelaysHardware(bool l1, bool l2, bool f1, bool f2) {
-  if ((l1 || l2) && (f1 || f2)) { l1 = false; l2 = false; f1 = false; f2 = false; }
-  state.lamp1On = l1; state.lamp2On = l2; state.fan1On = f1; state.fan2On = f2;
-  digitalWrite(PIN_RELAY_LAMP1, l1 ? HIGH : LOW);
-  digitalWrite(PIN_RELAY_LAMP2, l2 ? HIGH : LOW);
-  digitalWrite(PIN_RELAY_FAN1,  f1 ? HIGH : LOW);
-  digitalWrite(PIN_RELAY_FAN2,  f2 ? HIGH : LOW);
-}
-
-void allRelaysOff() { applyRelaysHardware(false, false, false, false); }
-
-void saveSettingsToNVS() {
-  prefs.begin("jalakbali", false);
-  prefs.putUChar("mode", static_cast<uint8_t>(state.mode));
-  prefs.putFloat("heatMin", state.heaterMinC);
-  prefs.putFloat("coolMax", state.coolerMaxC);
-  prefs.end();
-}
-
-void loadSettingsFromNVS() {
-  prefs.begin("jalakbali", true);
-  uint8_t savedMode = prefs.getUChar("mode", static_cast<uint8_t>(MODE_AUTO));
-  float savedHeat = prefs.getFloat("heatMin", DEFAULT_HEATER_MIN);
-  float savedCool = prefs.getFloat("coolMax", DEFAULT_COOLER_MAX);
-  prefs.end();
-  state.mode = (savedMode == static_cast<uint8_t>(MODE_MANUAL)) ? MODE_MANUAL : MODE_AUTO;
-  if (savedHeat >= 15.0f && savedHeat <= 45.0f && savedCool > savedHeat && savedCool < EMERGENCY_MAX_TEMP) {
-    state.heaterMinC = savedHeat; state.coolerMaxC = savedCool;
-  }
-}
-
-void readDHTAndEvaluateControl() {
-  float h = dht.readHumidity();
-  float t = dht.readTemperature();
-  if (isnan(t) || isnan(h) || h < 0.0f || h > 100.0f || t < -20.0f || t > 80.0f) {
-    state.sensorOk = false; state.tempAlert = "SENSOR_ERROR"; allRelaysOff(); return;
-  }
-  state.sensorOk = true; state.temperatureC = t; state.humidityPct = h;
-  if (state.temperatureC >= EMERGENCY_MAX_TEMP) {
-    state.tempAlert = "EMERGENCY_HIGH"; applyRelaysHardware(false, false, true, true); return;
-  }
-  if (state.mode == MODE_AUTO) {
-    if (state.temperatureC < state.heaterMinC) { state.tempAlert = "LOW_TEMP"; applyRelaysHardware(true, true, false, false); }
-    else if (state.temperatureC > state.coolerMaxC) { state.tempAlert = "HIGH_TEMP"; applyRelaysHardware(false, false, true, true); }
-    else { state.tempAlert = "NORMAL"; }
+  if (httpd_start(&jalak_stream_httpd, &config) == ESP_OK) {
+    httpd_register_uri_handler(jalak_stream_httpd, &stream_uri);
+    Serial.println("Stream kamera aktif di port 81 (/stream)");
   } else {
-    state.tempAlert = (state.temperatureC > state.coolerMaxC) ? "HIGH_TEMP" : "NORMAL";
-    applyRelaysHardware(state.lamp1On, state.lamp2On, state.fan1On, state.fan2On);
+    Serial.println("Gagal menjalankan stream server di port 81");
   }
 }
 
-void handleWiFiConnection(unsigned long now) {
-  if (WiFi.status() == WL_CONNECTED) {
-    bool justConnected = !state.wifiConnected;
-    state.wifiConnected = true;
-    state.wifiRetryDelayMs = 1000UL;
-    g_streamUrl = "http://" + WiFi.localIP().toString() + ":81/stream";
-    if (justConnected) {
-      Serial.print("IP ESP32: ");
-      Serial.println(WiFi.localIP());
-    }
-    if (camera_httpd == NULL) {
-      startCameraServer();
-    }
+void publishTelemetry() {
+  if (!mqtt.connected()) return;
+  JsonDocument doc;
+  if (isnan(cachedTemp)) doc["temp"] = nullptr;
+  else doc["temp"] = serialized(String(cachedTemp, 1));
+
+  if (isnan(cachedHum)) doc["hum"] = nullptr;
+  else doc["hum"] = serialized(String(cachedHum, 1));
+
+  doc["auto"] = autoMode;
+  doc["target"] = targetTemp;
+  JsonArray rArr = doc["relays"].to<JsonArray>();
+  for (int i = 0; i < 4; i++) {
+    rArr.add(relayState[i] ? 1 : 0);
+  }
+
+  char payload[256];
+  serializeJson(doc, payload, sizeof(payload));
+  mqtt.publish(TOPIC_TELEMETRY, payload, true);
+}
+
+void applyAutoControl() {
+  if (!autoMode) return;
+
+  if (isnan(cachedTemp)) {
+    setAllRelaysOff();
     return;
   }
-  state.wifiConnected = false; state.supabaseReachable = false;
-  if (now - state.lastWifiAttemptMs >= state.wifiRetryDelayMs) {
-    state.lastWifiAttemptMs = now;
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-    state.wifiRetryDelayMs = min(state.wifiRetryDelayMs * 2UL, 30000UL);
-  }
-}
 
-bool supabaseRequest(const String& pathAndQuery, const char* method, const String& payload, String* responseBody = nullptr) {
-  if (!state.wifiConnected || WiFi.status() != WL_CONNECTED) return false;
+  float low = targetTemp - HYSTERESIS;
+  float high = targetTemp + HYSTERESIS;
 
-  WiFiClientSecure client;
-  client.setInsecure();
-  client.setTimeout(10); // detik untuk socket/TLS
-
-  HTTPClient http;
-  http.setTimeout(10000); // ms
-  http.setReuse(false);
-
-  if (!http.begin(client, String(SUPABASE_URL) + pathAndQuery)) {
-    Serial.printf("[SB] http.begin failed | heap=%u rssi=%d\n", ESP.getFreeHeap(), WiFi.RSSI());
-    return false;
-  }
-
-  http.addHeader("apikey", SUPABASE_ANON_KEY);
-  http.addHeader("Authorization", String("Bearer ") + SUPABASE_ANON_KEY);
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("Connection", "close");
-
-  int httpCode = -1;
-  if (strcmp(method, "GET") == 0) {
-    httpCode = http.GET();
-  } else if (strcmp(method, "POST") == 0) {
-    if (pathAndQuery.indexOf("on_conflict=") >= 0) {
-      http.addHeader("Prefer", "resolution=merge-duplicates,return=minimal");
-    } else {
-      http.addHeader("Prefer", "return=minimal");
+  for (int i = 0; i < 4; i++) {
+    bool wantOn = false;
+    if (cachedTemp < low && strcmp(RELAY_TYPES[i], "heat") == 0) {
+      wantOn = true;
+    } else if (cachedTemp > high && strcmp(RELAY_TYPES[i], "fan") == 0) {
+      wantOn = true;
     }
-    httpCode = http.POST(payload);
-  } else if (strcmp(method, "PATCH") == 0) {
-    http.addHeader("Prefer", "return=minimal");
-    httpCode = http.PATCH(payload);
+    writeRelayPin(i, wantOn);
   }
-
-  bool ok = (httpCode >= 200 && httpCode < 300);
-  if (!ok) {
-    Serial.printf("[SB] %s %s -> HTTP %d | err=%s | heap=%u maxBlk=%u rssi=%d\n",
-                  method, pathAndQuery.c_str(), httpCode,
-                  http.errorToString(httpCode).c_str(),
-                  ESP.getFreeHeap(), ESP.getMaxAllocHeap(), WiFi.RSSI());
-  } else if (responseBody != nullptr) {
-    *responseBody = http.getString();
-  }
-
-  http.end();
-  client.stop();
-  return ok;
 }
 
-void sendTelemetryToSupabase() {
-  if (!state.wifiConnected) { state.lastSyncStatus = "OFFLINE_WIFI"; return; }
-  bool readingSent = true;
-  if (state.sensorOk) {
-    JsonDocument docReading;
-    docReading["device_id"] = DEVICE_ID;
-    docReading["temperature_c"] = serialized(String(state.temperatureC, 2));
-    docReading["humidity_pct"] = serialized(String(state.humidityPct, 2));
-    docReading["sensor_ok"] = true;
-    docReading["temp_alert"] = state.tempAlert;
-    String bodyReading; serializeJson(docReading, bodyReading);
-    readingSent = supabaseRequest("/rest/v1/sensor_readings", "POST", bodyReading);
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  String msg;
+  msg.reserve(length + 1);
+  for (unsigned int i = 0; i < length; i++) {
+    msg += (char)payload[i];
   }
-  JsonDocument docStatus;
-  docStatus["device_id"] = DEVICE_ID;
-  docStatus["is_online"] = true;
-  docStatus["control_mode"] = (state.mode == MODE_AUTO) ? "AUTO" : "MANUAL";
-  docStatus["heater_min_c"] = serialized(String(state.heaterMinC, 1));
-  docStatus["cooler_max_c"] = serialized(String(state.coolerMaxC, 1));
-  docStatus["emergency_max_c"] = serialized(String(EMERGENCY_MAX_TEMP, 1));
-  docStatus["lamp1_on"] = state.lamp1On; docStatus["lamp2_on"] = state.lamp2On;
-  docStatus["fan1_on"] = state.fan1On; docStatus["fan2_on"] = state.fan2On;
-  docStatus["sensor_ok"] = state.sensorOk; docStatus["temp_alert"] = state.tempAlert;
-  docStatus["wifi_rssi"] = WiFi.RSSI();
-  if (g_streamUrl.length() > 0) docStatus["camera_stream_url"] = g_streamUrl;
-  if (state.sensorOk) {
-    docStatus["last_temperature_c"] = serialized(String(state.temperatureC, 2));
-    docStatus["last_humidity_pct"] = serialized(String(state.humidityPct, 2));
-  }
-  String bodyStatus; serializeJson(docStatus, bodyStatus);
-  bool statusSent = supabaseRequest("/rest/v1/device_status?on_conflict=device_id", "POST", bodyStatus);
-  state.supabaseReachable = (readingSent && statusSent);
-  state.lastSyncStatus = state.supabaseReachable ? "SYNC_OK" : "SYNC_ERR";
-}
 
-void markCommandStatus(const String& cmdId, const char* newStatus, const char* note) {
-  JsonDocument doc; doc["status"] = newStatus; doc["status_note"] = note;
-  String body; serializeJson(doc, body);
-  supabaseRequest("/rest/v1/device_commands?id=eq." + cmdId, "PATCH", body);
-}
-
-void pollPendingCommands() {
-  if (!state.wifiConnected) return;
-  String resp;
-  String query = String("/rest/v1/device_commands?device_id=eq.") + DEVICE_ID + "&status=eq.pending&order=created_at.asc&limit=5";
-  if (!supabaseRequest(query, "GET", "", &resp)) return;
   JsonDocument doc;
-  if (deserializeJson(doc, resp) || !doc.is<JsonArray>()) return;
-  for (JsonObject cmd : doc.as<JsonArray>()) {
-    String cmdId = cmd["id"] | "";
-    String cmdType = cmd["command_type"] | "";
-    JsonObject payload = cmd["payload"].as<JsonObject>();
-    if (cmdId.length() == 0) continue;
+  DeserializationError err = deserializeJson(doc, msg);
+  if (err) return;
 
-    if (cmdType == "SET_MODE") {
-      const char* rawMode = payload["mode"] | (payload["control_mode"] | "AUTO");
-      state.mode = (String(rawMode) == "MANUAL") ? MODE_MANUAL : MODE_AUTO;
-      saveSettingsToNVS();
-      markCommandStatus(cmdId, "executed", "Mode diperbarui");
-    } else if (cmdType == "SET_SETPOINTS") {
-      float hMin = payload["heater_min_c"] | state.heaterMinC;
-      float cMax = payload["cooler_max_c"] | state.coolerMaxC;
-      if (hMin >= 15.0f && hMin <= 45.0f && cMax > hMin && cMax < EMERGENCY_MAX_TEMP) {
-        state.heaterMinC = hMin;
-        state.coolerMaxC = cMax;
-        saveSettingsToNVS();
-        markCommandStatus(cmdId, "executed", "Setpoint disimpan ke NVS");
-      } else {
-        markCommandStatus(cmdId, "failed", "Setpoint di luar batas aman");
-      }
-    } else if (cmdType == "SET_RELAYS") {
-      if (state.sensorOk && state.temperatureC >= EMERGENCY_MAX_TEMP) {
-        markCommandStatus(cmdId, "failed", "Ditolak: proteksi suhu darurat aktif");
-        continue;
-      }
-      bool l1 = payload["lamp1_on"] | state.lamp1On;
-      bool l2 = payload["lamp2_on"] | state.lamp2On;
-      bool f1 = payload["fan1_on"] | state.fan1On;
-      bool f2 = payload["fan2_on"] | state.fan2On;
-      if ((l1 || l2) && (f1 || f2)) {
-        markCommandStatus(cmdId, "failed", "Ditolak: lampu & kipas tidak boleh bersamaan");
-      } else {
-        state.mode = MODE_MANUAL;
-        saveSettingsToNVS();
-        applyRelaysHardware(l1, l2, f1, f2);
-        markCommandStatus(cmdId, "executed", "Relay manual diterapkan");
-      }
-    } else if (cmdType == "EMERGENCY_OFF") {
-      allRelaysOff();
-      markCommandStatus(cmdId, "executed", "Semua relay dimatikan");
-    } else {
-      markCommandStatus(cmdId, "failed", "Tipe perintah tidak dikenal");
+  String t = String(topic);
+  if (t == TOPIC_CMD_RELAY) {
+    int ch = doc["ch"] | 0;
+    int st = doc["state"] | 0;
+    if (ch >= 1 && ch <= 4) {
+      autoMode = false;
+      writeRelayPin(ch - 1, st != 0);
+      publishTelemetry();
     }
+  } else if (t == TOPIC_CMD_MODE) {
+    autoMode = doc["auto"] | true;
+    if (autoMode) applyAutoControl();
+    publishTelemetry();
+  } else if (t == TOPIC_CMD_TARG) {
+    if (!doc["target"].isNull()) {
+      targetTemp = doc["target"].as<float>();
+      if (autoMode) applyAutoControl();
+      publishTelemetry();
+    }
+  } else if (t == TOPIC_CMD_OFF) {
+    autoMode = false;
+    setAllRelaysOff();
+    publishTelemetry();
   }
 }
-void updateOledDisplay() {
-  display.clearDisplay(); display.setTextSize(1); display.setTextColor(SSD1306_WHITE); display.setCursor(0, 0);
-  if (state.sensorOk) display.printf("T:%.1fC H:%.0f%% %s", state.temperatureC, state.humidityPct, (state.mode == MODE_AUTO) ? "AUTO" : "MAN");
-  else display.printf("DHT ERR! %s", (state.mode == MODE_AUTO) ? "AUTO" : "MAN");
-  display.setCursor(0, 11);
-  display.printf("L:%d%d F:%d%d | %s", state.lamp1On ? 1 : 0, state.lamp2On ? 1 : 0, state.fan1On ? 1 : 0, state.fan2On ? 1 : 0, state.tempAlert.c_str());
-  display.setCursor(0, 22);
-  display.printf("WiFi:%s | %s", state.wifiConnected ? "OK" : "OFF", state.lastSyncStatus.c_str());
-  display.display();
+
+void ensureWiFi() {
+  if (WiFi.status() == WL_CONNECTED) return;
+  unsigned long now = millis();
+  if (now - lastWifiCheckMs < 5000) return;
+  lastWifiCheckMs = now;
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+}
+
+void ensureMqtt() {
+  if (WiFi.status() != WL_CONNECTED || mqtt.connected()) return;
+  static unsigned long lastAttempt = 0;
+  if (millis() - lastAttempt < 3000) return;
+  lastAttempt = millis();
+
+  if (mqtt.connect(MQTT_CLIENT_ID, MQTT_USER, MQTT_PASS)) {
+    Serial.println("EMQX MQTT terhubung");
+    mqtt.subscribe(TOPIC_CMD_RELAY, 1);
+    mqtt.subscribe(TOPIC_CMD_MODE, 1);
+    mqtt.subscribe(TOPIC_CMD_TARG, 1);
+    mqtt.subscribe(TOPIC_CMD_OFF, 1);
+    publishTelemetry();
+  } else {
+    Serial.print("Gagal konek EMQX, rc=");
+    Serial.println(mqtt.state());
+  }
 }
 
 void setup() {
-  Serial.begin(115200); delay(200);
-  pinMode(PIN_RELAY_LAMP1, OUTPUT); pinMode(PIN_RELAY_LAMP2, OUTPUT);
-  pinMode(PIN_RELAY_FAN1,  OUTPUT); pinMode(PIN_RELAY_FAN2,  OUTPUT);
-  allRelaysOff();
-  pinMode(PIN_ENC_CLK, INPUT_PULLUP); pinMode(PIN_ENC_DT, INPUT_PULLUP); pinMode(PIN_ENC_SW, INPUT_PULLUP);
-  loadSettingsFromNVS();
+  Serial.begin(115200);
   dht.begin();
-  initCameraStream();
-  Wire.begin(PIN_OLED_SDA, PIN_OLED_SCL);
-  if (display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) { display.clearDisplay(); display.display(); }
-  readDHTAndEvaluateControl();
-  updateOledDisplay();
+
+  for (int i = 0; i < 4; i++) {
+    pinMode(RELAY_PINS[i], OUTPUT);
+    writeRelayPin(i, false);
+  }
+
+  cameraReady = initCamera();
+  if (!cameraReady) {
+    Serial.println("Kamera gagal diinisialisasi");
+  }
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) {
+    delay(300);
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("IP ESP32-S3: ");
+    Serial.println(WiFi.localIP());
+  }
+
+  espClient.setInsecure();
+  mqtt.setServer(MQTT_HOST, MQTT_PORT);
+  mqtt.setBufferSize(512);
+  mqtt.setCallback(mqttCallback);
+
+  startStreamServer();
+  ensureMqtt();
 }
 
 void loop() {
+  ensureWiFi();
+  ensureMqtt();
+  mqtt.loop();
+
   unsigned long now = millis();
-  handleWiFiConnection(now);
-  if (now - state.lastSensorReadMs >= SENSOR_READ_MS) { state.lastSensorReadMs = now; readDHTAndEvaluateControl(); }
-  if (now - state.lastTelemetryMs >= TELEMETRY_INTERVAL_MS) { state.lastTelemetryMs = now; sendTelemetryToSupabase(); }
-  if (now - state.lastCommandPollMs >= COMMAND_POLL_MS) { state.lastCommandPollMs = now; pollPendingCommands(); }
-  if (now - state.lastOledRefreshMs >= OLED_REFRESH_MS) { state.lastOledRefreshMs = now; updateOledDisplay(); }
+  if (now - lastDhtReadMs >= 2000) {
+    lastDhtReadMs = now;
+    float h = dht.readHumidity();
+    float t = dht.readTemperature();
+    if (!isnan(t) && !isnan(h)) {
+      cachedTemp = t;
+      cachedHum = h;
+    } else {
+      cachedTemp = NAN;
+      cachedHum = NAN;
+    }
+    applyAutoControl();
+  }
+
+  if (now - lastPubMs >= 2500) {
+    lastPubMs = now;
+    publishTelemetry();
+  }
 }
