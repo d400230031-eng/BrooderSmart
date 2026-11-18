@@ -49,7 +49,7 @@ export async function sendDeviceCommand(commandType, payload = {}) {
     device_id: SUPABASE_CONFIG.deviceId,
     command_type: commandType,
     payload,
-    status: "pending",
+    status: "PENDING",
   };
   const res = await fetch(restUrl("/device_commands"), {
     method: "POST",
