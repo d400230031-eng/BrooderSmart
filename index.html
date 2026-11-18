@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="id">
 <head>
 <meta charset="UTF-8">
@@ -21,6 +21,7 @@ main{margin-left:245px;width:calc(100% - 245px);padding:30px 35px}
 .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:30px}
 .top h1{font-size:23px;margin:0 0 7px}.top p{font-size:12px;color:var(--muted);margin:0}
 .status{background:#e1f5e9;color:#187a4b;padding:9px 13px;border-radius:20px;font-size:11px;font-weight:600}
+.status.offline{background:#fde8e8;color:#b42318}
 .section-title{font-size:14px;font-weight:700;margin:25px 0 14px}
 .cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:15px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:19px}
@@ -53,69 +54,200 @@ canvas{width:100%;height:100%}
 <body>
 <div class="layout">
 <aside class="sidebar">
- <div class="brand"><div class="logo">??</div><div><h2>Jalak Bali</h2><small>SMART MONITORING</small></div></div>
+ <div class="brand"><div class="logo">🐦</div><div><h2>Jalak Bali</h2><small>SMART MONITORING</small></div></div>
  <div class="nav-title">MENU UTAMA</div>
- <div class="nav active">? <span>Dashboard</span></div>
- <div class="nav">? <span>Monitoring</span></div>
- <div class="nav">? <span>Live Camera</span></div>
- <div class="nav">? <span>Kontrol Perangkat</span></div>
+ <div class="nav active">▦ <span>Dashboard</span></div>
+ <div class="nav">◉ <span>Monitoring</span></div>
+ <div class="nav">▣ <span>Live Camera</span></div>
+ <div class="nav">⚙ <span>Kontrol Perangkat</span></div>
  <div class="nav-title">SISTEM</div>
- <div class="nav">? <span>Riwayat Data</span></div>
- <div class="nav">? <span>Pengaturan</span></div>
- <div class="sidebar-bottom">Jalak Bali Monitoring<br>ESP32-S3-CAM � Version 1.0</div>
+ <div class="nav">▤ <span>Riwayat Data</span></div>
+ <div class="nav">⚙ <span>Pengaturan</span></div>
+ <div class="sidebar-bottom">Jalak Bali Monitoring<br>ESP32-S3-CAM · Version 1.0</div>
 </aside>
 <main>
- <header class="top"><div><h1>Dashboard Monitoring</h1><p>Pemantauan kondisi lingkungan anakan Jalak Bali</p></div><div class="status">? DEMO MODE</div></header>
+ <header class="top"><div><h1>Dashboard Monitoring</h1><p id="device-sub">Pemantauan kondisi lingkungan anakan Jalak Bali</p></div><div class="status" id="conn-badge">● MENGHUBUNGKAN...</div></header>
  <div class="section-title">Kondisi Lingkungan</div>
  <section class="cards">
-  <div class="card"><div class="icon">???</div><div class="card-label">Suhu Ruangan</div><div class="metric" id="temp">32.5<small> �C</small></div><div class="note">Pembacaan sensor suhu</div></div>
-  <div class="card"><div class="icon">??</div><div class="card-label">Kelembapan</div><div class="metric" id="hum">65<small> %</small></div><div class="note">Kelembapan udara</div></div>
-  <div class="card"><div class="icon">??</div><div class="card-label">Target Suhu</div><div class="metric">32.0<small> �C</small></div><div class="note">Setpoint sementara</div></div>
-  <div class="card"><div class="icon">?</div><div class="card-label">Status Sistem</div><div class="metric" id="system" style="font-size:21px;color:#16845a">NORMAL</div><div class="note">Status simulasi</div></div>
+  <div class="card"><div class="icon">🌡️</div><div class="card-label">Suhu Ruangan</div><div class="metric" id="temp">--.-<small> °C</small></div><div class="note" id="temp-note">Menunggu data sensor</div></div>
+  <div class="card"><div class="icon">💧</div><div class="card-label">Kelembapan</div><div class="metric" id="hum">--<small> %</small></div><div class="note">Kelembapan udara</div></div>
+  <div class="card"><div class="icon">🎯</div><div class="card-label">Target Suhu</div><div class="metric" id="target-temp">32.0<small> °C</small></div><div class="note" id="setpoint-note">Setpoint sementara</div></div>
+  <div class="card"><div class="icon">⚡</div><div class="card-label">Status Sistem</div><div class="metric" id="system" style="font-size:21px;color:#16845a">MENUNGGU</div><div class="note" id="system-note">Sinkronisasi Supabase</div></div>
  </section>
  <div class="section-title">Monitoring Real-Time</div>
  <section class="middle">
-  <div class="card"><div class="card-label">Grafik Perubahan Suhu</div><div class="chart-wrap"><canvas id="chart"></canvas></div><div class="note">Data simulasi � Pembaruan berkala</div></div>
-  <div class="card"><div class="card-label" style="margin-bottom:14px">Live Camera � ESP32-S3-CAM</div><div class="camera"><img id="camStream" style="width:100%;height:100%;object-fit:cover;display:none"><div id="camPh"><div class="cam-icon">&#128247;</div><p>Masukkan IP ESP32-S3</p><small>Port 81 /stream</small></div></div><div style="margin-top:10px;display:flex;gap:8px"><input id="camIp" placeholder="192.168.1.50" style="flex:1;padding:6px 10px;border:1px solid #e8eeea;border-radius:8px"><button type="button" id="camBtn" style="padding:6px 12px;border:0;border-radius:8px;background:#167c58;color:#fff;cursor:pointer">Stream</button></div><script>const ipEl=document.getElementById("camIp"),imgEl=document.getElementById("camStream"),phEl=document.getElementById("camPh");if(localStorage.getItem("camIp"))ipEl.value=localStorage.getItem("camIp");function runCam(){const v=ipEl.value.trim();if(!v)return;localStorage.setItem("camIp",v);imgEl.onload=()=>{imgEl.style.display="block";phEl.style.display="none"};imgEl.onerror=()=>{imgEl.style.display="none";phEl.style.display="block"};imgEl.src="http://"+v+":81/stream"}document.getElementById("camBtn").onclick=runCam;if(ipEl.value)runCam();</script></div>
+  <div class="card"><div class="card-label">Grafik Perubahan Suhu</div><div class="chart-wrap"><canvas id="chart"></canvas></div><div class="note" id="chart-note">Menunggu data riwayat</div></div>
+  <div class="card"><div class="card-label" style="margin-bottom:14px">Live Camera · ESP32-S3-CAM</div><div class="camera"><div><div class="cam-icon">📷</div><p>Kamera belum terhubung</p><small>Menunggu stream ESP32-S3-CAM</small></div></div><div class="note" style="margin-top:12px" id="cam-status">Status: Menunggu koneksi</div></div>
  </section>
  <div class="section-title">Kontrol Perangkat</div>
  <section class="device-grid">
-  <div class="device"><div class="device-top"><div class="device-icon">??</div><button class="toggle"></button></div><h3>Lampu Pemanas 1</h3><p>Relay Channel 1</p><div class="device-state">Status: <b>OFF</b></div></div>
-  <div class="device"><div class="device-top"><div class="device-icon">??</div><button class="toggle"></button></div><h3>Lampu Pemanas 2</h3><p>Relay Channel 2</p><div class="device-state">Status: <b>OFF</b></div></div>
-  <div class="device"><div class="device-top"><div class="device-icon">??</div><button class="toggle"></button></div><h3>Kipas Sirkulasi 1</h3><p>Relay Channel 3</p><div class="device-state">Status: <b>OFF</b></div></div>
-  <div class="device"><div class="device-top"><div class="device-icon">??</div><button class="toggle"></button></div><h3>Kipas Pendingin 2</h3><p>Relay Channel 4</p><div class="device-state">Status: <b>OFF</b></div></div>
+  <div class="device" data-key="lamp1_on"><div class="device-top"><div class="device-icon">💡</div><button class="toggle"></button></div><h3>Lampu Pemanas 1</h3><p>Relay Channel 1</p><div class="device-state">Status: <b>OFF</b></div></div>
+  <div class="device" data-key="lamp2_on"><div class="device-top"><div class="device-icon">💡</div><button class="toggle"></button></div><h3>Lampu Pemanas 2</h3><p>Relay Channel 2</p><div class="device-state">Status: <b>OFF</b></div></div>
+  <div class="device" data-key="fan1_on"><div class="device-top"><div class="device-icon">🌀</div><button class="toggle"></button></div><h3>Kipas Sirkulasi 1</h3><p>Relay Channel 3</p><div class="device-state">Status: <b>OFF</b></div></div>
+  <div class="device" data-key="fan2_on"><div class="device-top"><div class="device-icon">🌀</div><button class="toggle"></button></div><h3>Kipas Pendingin 2</h3><p>Relay Channel 4</p><div class="device-state">Status: <b>OFF</b></div></div>
  </section>
  <div class="footer"><span>Jalak Bali Smart Monitoring System</span><span id="clock">--:--:--</span></div>
 </main>
 </div>
-<script>
-const $=id=>document.getElementById(id);
-let temperature=32.5,humidity=65;
-let history=Array.from({length:20},()=>32+Math.random());
-function draw(){
- const c=$('chart'),r=c.getBoundingClientRect(),d=devicePixelRatio||1;
- c.width=r.width*d;c.height=r.height*d;
- const x=c.getContext('2d');x.scale(d,d);
- const w=r.width,h=r.height,p=25;
- x.clearRect(0,0,w,h);x.font='10px Arial';x.fillStyle='#89958e';
- for(let i=0;i<5;i++){let y=p+i*(h-2*p)/4;x.fillText((35-i)+'�',0,y+3);x.strokeStyle='#edf1ee';x.beginPath();x.moveTo(32,y);x.lineTo(w,y);x.stroke()}
- x.beginPath();history.forEach((v,i)=>{let xx=35+i*(w-45)/(history.length-1),yy=p+(35-v)*(h-2*p)/5;if(!i)x.moveTo(xx,yy);else x.lineTo(xx,yy)});
- x.strokeStyle='#20865c';x.lineWidth=2.5;x.stroke();
+<script type="module">
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { SUPABASE_CONFIG, fetchSensorReadings, fetchDeviceStatus, evaluateDeviceOnline, commands, subscribeRealtimeUpdates } from "./supabaseClient.js";
+
+const $ = id => document.getElementById(id);
+let temperature = null;
+let humidity = null;
+let history = [];
+
+function pickTemp(row) {
+  if (!row) return null;
+  const raw = row.temperature_c ?? row.temperature ?? row.temp_c ?? row.temp;
+  const num = Number(raw);
+  return Number.isFinite(num) ? num : null;
 }
-function update(){
- $('temp').innerHTML=temperature.toFixed(1)+'<small> �C</small>';
- $('hum').innerHTML=humidity.toFixed(0)+'<small> %</small>';
- $('system').textContent=temperature>34?'PERINGATAN':temperature<29?'SUHU RENDAH':'NORMAL';
- $('system').style.color=temperature>34?'#dc6868':'#16845a';
+
+function pickHum(row) {
+  if (!row) return null;
+  const raw = row.humidity_pct ?? row.humidity ?? row.hum_pct ?? row.hum;
+  const num = Number(raw);
+  return Number.isFinite(num) ? num : null;
 }
-document.querySelectorAll('.toggle').forEach(btn=>btn.addEventListener('click',()=>{
- btn.classList.toggle('on');
- btn.parentElement.parentElement.querySelector('.device-state b').textContent=btn.classList.contains('on')?'ON':'OFF';
+
+function draw() {
+  const c = $('chart'), r = c.getBoundingClientRect(), d = devicePixelRatio || 1;
+  c.width = r.width * d; c.height = r.height * d;
+  const x = c.getContext('2d'); x.scale(d, d);
+  const w = r.width, h = r.height, p = 25;
+  x.clearRect(0, 0, w, h); x.font = '10px Arial'; x.fillStyle = '#89958e';
+  const vals = history.length ? history : [32];
+  const maxV = Math.max(36, Math.ceil(Math.max(...vals) + 1));
+  const minV = Math.min(27, Math.floor(Math.min(...vals) - 1));
+  const span = Math.max(1, maxV - minV);
+  for (let i = 0; i < 5; i++) {
+    const val = maxV - (i * span) / 4;
+    const y = p + (i * (h - 2 * p)) / 4;
+    x.fillText(val.toFixed(0) + '°', 0, y + 3);
+    x.strokeStyle = '#edf1ee';
+    x.beginPath(); x.moveTo(34, y); x.lineTo(w, y); x.stroke();
+  }
+  if (!history.length) return;
+  x.beginPath();
+  history.forEach((v, i) => {
+    const xx = 36 + (i * (w - 46)) / Math.max(1, history.length - 1);
+    const yy = p + ((maxV - v) * (h - 2 * p)) / span;
+    if (!i) x.moveTo(xx, yy); else x.lineTo(xx, yy);
+  });
+  x.strokeStyle = '#20865c'; x.lineWidth = 2.5; x.stroke();
+}
+
+function updateUI() {
+  if (temperature !== null) {
+    $('temp').innerHTML = temperature.toFixed(1) + '<small> °C</small>';
+    $('system').textContent = temperature > 34 ? 'PERINGATAN' : temperature < 29 ? 'SUHU RENDAH' : 'NORMAL';
+    $('system').style.color = temperature > 34 ? '#dc6868' : '#16845a';
+  }
+  if (humidity !== null) {
+    $('hum').innerHTML = humidity.toFixed(0) + '<small> %</small>';
+  }
+}
+
+function applyReading(row) {
+  const t = pickTemp(row);
+  const h = pickHum(row);
+  if (t !== null) {
+    temperature = t;
+    history.push(t);
+    if (history.length > 20) history.shift();
+    $('temp-note').textContent = row.recorded_at ? `Update: ${new Date(row.recorded_at).toLocaleTimeString('id-ID')}` : 'Data sensor terbaru';
+    $('chart-note').textContent = `Supabase (${SUPABASE_CONFIG.deviceId}) · ${history.length} sampel`;
+  }
+  if (h !== null) humidity = h;
+  updateUI();
+  draw();
+}
+
+function applyDeviceStatus(statusRow) {
+  const badge = $('conn-badge');
+  if (!statusRow) {
+    badge.textContent = '● MENUNGGU STATUS';
+    badge.classList.add('offline');
+    $('system-note').textContent = 'Belum ada baris device_status';
+    return;
+  }
+  const online = evaluateDeviceOnline(statusRow);
+  badge.textContent = online ? `● ONLINE (${SUPABASE_CONFIG.deviceId})` : '● OFFLINE';
+  badge.classList.toggle('offline', !online);
+  $('system-note').textContent = online ? 'Terhubung ke ESP32-S3' : 'Melewati batas waktu status';
+  if (statusRow.heater_min_c != null) {
+    $('target-temp').innerHTML = Number(statusRow.heater_min_c).toFixed(1) + '<small> °C</small>';
+    $('setpoint-note').textContent = 'Setpoint dari device_status';
+  }
+  if (statusRow.stream_url) {
+    $('cam-status').textContent = `Status: Stream tersedia (${statusRow.stream_url})`;
+  }
+  document.querySelectorAll('.device').forEach(el => {
+    const key = el.dataset.key;
+    if (key && key in statusRow) {
+      const isOn = Boolean(statusRow[key]);
+      el.querySelector('.toggle').classList.toggle('on', isOn);
+      el.querySelector('.device-state b').textContent = isOn ? 'ON' : 'OFF';
+    }
+  });
+}
+
+function getRelayStates() {
+  const state = { lamp1_on: false, lamp2_on: false, fan1_on: false, fan2_on: false };
+  document.querySelectorAll('.device').forEach(el => {
+    const key = el.dataset.key;
+    if (key in state) state[key] = el.querySelector('.toggle').classList.contains('on');
+  });
+  return state;
+}
+
+document.querySelectorAll('.toggle').forEach(btn => btn.addEventListener('click', async () => {
+  btn.classList.toggle('on');
+  btn.parentElement.parentElement.querySelector('.device-state b').textContent = btn.classList.contains('on') ? 'ON' : 'OFF';
+  try { await commands.setRelays(getRelayStates()); } catch (e) { console.error(e); }
 }));
-function tick(){$('clock').textContent=new Date().toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'medium'});}
-setInterval(tick,1000);tick();
-setInterval(()=>{temperature+=(Math.random()-.5)*.25;humidity+=(Math.random()-.5)*.8;history.push(temperature);history.shift();update();draw()},3000);
-window.addEventListener('resize',draw);update();draw();
+
+async function initSupabase() {
+  $('device-sub').textContent = `Device ID: ${SUPABASE_CONFIG.deviceId} · Pemantauan kondisi lingkungan anakan Jalak Bali`;
+  try {
+    const rows = await fetchSensorReadings(20);
+    const ordered = [...rows].reverse();
+    history = ordered.map(pickTemp).filter(v => v !== null).slice(-20);
+    if (rows[0]) applyReading(rows[0]);
+    else draw();
+  } catch (err) {
+    console.warn('fetchSensorReadings error:', err);
+    $('conn-badge').textContent = '● ERROR DB';
+    $('conn-badge').classList.add('offline');
+    $('temp-note').textContent = err.message;
+    draw();
+  }
+
+  try {
+    const st = await fetchDeviceStatus();
+    applyDeviceStatus(st);
+  } catch (err) {
+    console.warn('fetchDeviceStatus error:', err);
+  }
+
+  try {
+    const sb = createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
+    subscribeRealtimeUpdates(sb, {
+      onNewReading: applyReading,
+      onStatusChange: applyDeviceStatus,
+    });
+  } catch (err) {
+    console.warn('Realtime error:', err);
+  }
+}
+
+function tick() { $('clock').textContent = new Date().toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'medium' }); }
+setInterval(tick, 1000); tick();
+window.addEventListener('resize', draw);
+draw();
+initSupabase();
 </script>
 </body>
 </html>
