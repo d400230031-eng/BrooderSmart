@@ -91,6 +91,7 @@ unsigned long lastPrimaryRetryMs = 0;
 bool cameraReady = false;
 bool oledReady = false;
 bool portalActive = false;
+bool dnsStarted = false;
 bool tryingPrimary = true;
 bool pendingFallbackWifi = false;
 volatile bool captureRequested = false;
@@ -146,8 +147,13 @@ String buildSetupHtml(const String& notice = "") {
 void startSetupPortal() {
   if (portalActive) return;
   WiFi.mode(WIFI_AP_STA);
+  delay(80);
   WiFi.softAP(AP_SSID, AP_PASS);
-  dnsServer.start(53, "*", WiFi.softAPIP());
+  delay(80);
+  if (!dnsStarted) {
+    dnsServer.start(53, "*", WiFi.softAPIP());
+    dnsStarted = true;
+  }
   portalActive = true;
   Serial.println("Aryo Sidiq tidak ditemukan/gagal, aktifkan portal setup");
   Serial.print("AP aktif: ");
@@ -156,16 +162,12 @@ void startSetupPortal() {
   Serial.println(WiFi.softAPIP());
 }
 
-void startStationAttempt(const char* ssid, const char* pass, bool primary) {
+void startStationAttempt(const char* ssid, const char* pass, bool primary, bool initialBoot = false) {
   tryingPrimary = primary;
-  WiFi.disconnect(true);
-  delay(120);
-  if (portalActive) {
-    WiFi.mode(WIFI_AP_STA);
-  } else {
-    WiFi.mode(WIFI_STA);
+  if (!initialBoot) {
+    WiFi.disconnect(false);
+    delay(80);
   }
-  WiFi.setAutoReconnect(false);
   if (pass && strlen(pass) > 0) {
     WiFi.begin(ssid, pass);
   } else {
@@ -476,7 +478,7 @@ void ensureWiFi() {
   if (pendingFallbackWifi) {
     pendingFallbackWifi = false;
     startSetupPortal();
-    startStationAttempt(fallbackWifiSsid.c_str(), fallbackWifiPass.c_str(), false);
+    startStationAttempt(fallbackWifiSsid.c_str(), fallbackWifiPass.c_str(), false, false);
     return;
   }
 
@@ -497,7 +499,7 @@ void ensureWiFi() {
     if (now - attemptStartMs >= 12000) {
       startSetupPortal();
       if (fallbackWifiSsid.length() > 0) {
-        startStationAttempt(fallbackWifiSsid.c_str(), fallbackWifiPass.c_str(), false);
+        startStationAttempt(fallbackWifiSsid.c_str(), fallbackWifiPass.c_str(), false, false);
       } else {
         tryingPrimary = false;
         lastPrimaryRetryMs = now;
@@ -505,11 +507,11 @@ void ensureWiFi() {
     }
   } else {
     if (fallbackWifiSsid.length() > 0 && (now - attemptStartMs >= 12000)) {
-      startStationAttempt(fallbackWifiSsid.c_str(), fallbackWifiPass.c_str(), false);
+      startStationAttempt(fallbackWifiSsid.c_str(), fallbackWifiPass.c_str(), false, false);
     }
     if (now - lastPrimaryRetryMs >= 30000) {
       lastPrimaryRetryMs = now;
-      startStationAttempt(PRIMARY_WIFI_SSID, PRIMARY_WIFI_PASS, true);
+      startStationAttempt(PRIMARY_WIFI_SSID, PRIMARY_WIFI_PASS, true, false);
     }
   }
 }
@@ -533,6 +535,7 @@ void ensureMqtt() {
 
 void setup() {
   Serial.begin(115200);
+  delay(200);
   dht.begin();
 
   pinMode(ENC_CLK, INPUT_PULLUP);
@@ -545,9 +548,6 @@ void setup() {
     pinMode(RELAY_PINS[i], OUTPUT);
     writeRelayPin(i, false);
   }
-
-  cameraReady = initCamera();
-  if (!cameraReady) Serial.println("Kamera gagal diinisialisasi");
 
   oledWire.begin(OLED_SDA, OLED_SCL);
   oledReady = display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR);
@@ -564,13 +564,18 @@ void setup() {
     Serial.println("OLED SSD1306 gagal diinisialisasi");
   }
 
+  cameraReady = initCamera();
+  if (!cameraReady) Serial.println("Kamera gagal diinisialisasi");
+
   prefs.begin("brooder_wifi", true);
   fallbackWifiSsid = prefs.getString("alt_ssid", "");
   fallbackWifiPass = prefs.getString("alt_pass", "");
   prefs.end();
 
+  WiFi.mode(WIFI_STA);
+  delay(100);
   setupWebRoutes();
-  startStationAttempt(PRIMARY_WIFI_SSID, PRIMARY_WIFI_PASS, true);
+  startStationAttempt(PRIMARY_WIFI_SSID, PRIMARY_WIFI_PASS, true, true);
 
   espClient.setInsecure();
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
@@ -580,7 +585,7 @@ void setup() {
 }
 
 void loop() {
-  if (portalActive) {
+  if (portalActive && dnsStarted) {
     dnsServer.processNextRequest();
   }
   webServer.handleClient();
