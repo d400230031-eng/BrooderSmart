@@ -337,6 +337,9 @@ void handleRotaryEncoder() {
 }
 
 bool initCamera() {
+  esp_camera_deinit();
+  delay(50);
+
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer   = LEDC_TIMER_0;
@@ -356,15 +359,20 @@ bool initCamera() {
   config.pin_sccb_scl = SIOC_GPIO_NUM;
   config.pin_pwdn     = PWDN_GPIO_NUM;
   config.pin_reset    = RESET_GPIO_NUM;
-  config.xclk_freq_hz = 10000000;
+  config.xclk_freq_hz = 8000000;
   config.pixel_format = PIXFORMAT_JPEG;
   config.fb_location  = psramFound() ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
   config.frame_size   = FRAMESIZE_QVGA;
-  config.jpeg_quality = 18;
+  config.jpeg_quality = 24;
   config.fb_count     = 1;
   config.grab_mode    = CAMERA_GRAB_WHEN_EMPTY;
 
-  return (esp_camera_init(&config) == ESP_OK);
+  esp_err_t err = esp_camera_init(&config);
+  if (err != ESP_OK) {
+    Serial.printf("esp_camera_init gagal: 0x%x\n", err);
+    return false;
+  }
+  return true;
 }
 
 void sendCapturedPhotoMqtt() {
