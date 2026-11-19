@@ -282,3 +282,27 @@ if (setupUrlInput && loadSetupBtn && openSetupTab && setupFrame) {
     openSetupTab.href = targetUrl;
   };
 }
+const setupUrlInput = document.getElementById("esp-setup-url");
+const open192Btn = document.getElementById("open-192-btn");
+
+if (setupUrlInput && open192Btn) {
+  const savedUrl = (localStorage.getItem("esp_setup_url") || "http://192.168.4.1").trim();
+  setupUrlInput.value = savedUrl;
+  open192Btn.textContent = savedUrl;
+
+  setupUrlInput.addEventListener("input", () => {
+    const val = setupUrlInput.value.trim() || "http://192.168.4.1";
+    open192Btn.textContent = val;
+  });
+
+  open192Btn.addEventListener("click", () => {
+    let target = (setupUrlInput.value || "http://192.168.4.1").trim();
+    if (!/^https?:\/\//i.test(target)) {
+      target = "http://" + target;
+    }
+    setupUrlInput.value = target;
+    open192Btn.textContent = target;
+    localStorage.setItem("esp_setup_url", target);
+    window.open(target, "_blank", "noopener,noreferrer");
+  });
+}
