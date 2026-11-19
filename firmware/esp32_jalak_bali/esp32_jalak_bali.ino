@@ -30,7 +30,7 @@ const char* TOPIC_CMD_CAPTURE = "SmartBrooder/jalak/cmd/capture";
 #define DHTTYPE DHT22
 DHT dht(DHTPIN, DHTTYPE);
 
-// OLED SSD1306 (Gunakan pin I2C terpisah dari kamera GPIO 4 & 5)
+// OLED SSD1306 (I2C SDA=19, SCL=20, Alamat 0x3C)
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 #define OLED_RESET -1
@@ -40,7 +40,7 @@ DHT dht(DHTPIN, DHTTYPE);
 TwoWire oledWire = TwoWire(1);
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &oledWire, OLED_RESET);
 
-// Rotary Encoder (Tekan SW = Menu/OK, Kanan CW = +0.1 Batas Atas, Kiri CCW = -0.1 Batas Bawah)
+// Rotary Encoder (SW=3, CLK=1, DT=2)
 #define ENC_CLK 1
 #define ENC_DT  2
 #define ENC_SW  3
@@ -132,7 +132,9 @@ void updateOled() {
   if (encMenuActive) {
     display.println("R:+Max L:-Min SW:OK");
   } else {
-    display.println("SW:Set Suhu | WiFi:" + String(WiFi.status() == WL_CONNECTED ? "OK" : "--"));
+    display.printf("WiFi:%s | Cam:%s\n",
+                   WiFi.status() == WL_CONNECTED ? "OK" : "--",
+                   cameraReady ? "OK" : "ERR");
   }
 
   display.display();
@@ -187,10 +189,8 @@ void handleRotaryEncoder() {
     if (!encMenuActive) {
       encMenuActive = true;
       autoMode = false;
-      Serial.println("Encoder: Menu Suhu Fisik AKTIF (Putar Kanan +0.1 Max, Kiri -0.1 Min, Tekan OK)");
     } else {
       encMenuActive = false;
-      Serial.printf("Encoder: OK disimpan -> Min: %.1f C, Max: %.1f C\n", minTemp, maxTemp);
       publishTelemetry();
     }
     updateOled();
@@ -203,11 +203,9 @@ void handleRotaryEncoder() {
       if (digitalRead(ENC_DT) != clkVal) {
         maxTemp = roundf((maxTemp + 0.1f) * 10.0f) / 10.0f;
         if (maxTemp <= minTemp) maxTemp = roundf((minTemp + 0.1f) * 10.0f) / 10.0f;
-        Serial.printf("Encoder Kanan (Batas Atas): %.1f C\n", maxTemp);
       } else {
         minTemp = roundf((minTemp - 0.1f) * 10.0f) / 10.0f;
         if (minTemp >= maxTemp) minTemp = roundf((maxTemp - 0.1f) * 10.0f) / 10.0f;
-        Serial.printf("Encoder Kiri (Batas Bawah): %.1f C\n", minTemp);
       }
       updateOled();
       publishTelemetry();
@@ -238,8 +236,8 @@ bool initCamera() {
   config.pin_reset    = RESET_GPIO_NUM;
   config.xclk_freq_hz = 16000000;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size   = FRAMESIZE_QVGA;
-  config.jpeg_quality = 26;
+  config.frame_size   = FRAMESIZE_QQVGA;
+  config.jpeg_quality = 28;
   config.fb_count     = 1;
   config.grab_mode    = CAMERA_GRAB_LATEST;
 
@@ -247,7 +245,10 @@ bool initCamera() {
 }
 
 void sendCapturedPhotoMqtt() {
-  if (!cameraReady || !mqtt.connected()) return;
+  if (!cameraReady || !mqtt.connected()) {
+    Serial.println("Kamera atau MQTT belum siap untuk ambil foto");
+    return;
+  }
 
   camera_fb_t *fb = esp_camera_fb_get();
   if (!fb) {
@@ -271,7 +272,7 @@ void sendCapturedPhotoMqtt() {
   b64Buf[b64Len] = '\0';
   esp_camera_fb_return(fb);
 
-  const size_t CHUNK_SIZE = 4096;
+  const size_t CHUNK_SIZE = 2048;
   int totalChunks = (int)((b64Len + CHUNK_SIZE - 1) / CHUNK_SIZE);
   unsigned long shotId = millis();
 
@@ -291,7 +292,7 @@ void sendCapturedPhotoMqtt() {
     serializeJson(pkt, out);
     mqtt.publish(TOPIC_PHOTO, out.c_str(), false);
     mqtt.loop();
-    delay(10);
+    delay(35);
   }
 
   free(b64Buf);
@@ -307,6 +308,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 
   String t = String(topic);
   if (t == TOPIC_CMD_CAPTURE) {
+    Serial.println("Perintah ambil foto diterima");
     captureRequested = true;
     return;
   }
@@ -374,9 +376,7 @@ void setup() {
 
   oledWire.begin(OLED_SDA, OLED_SCL);
   oledReady = display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR);
-  if (!oledReady) {
-    Serial.println("OLED SSD1306 gagal diinisialisasi");
-  } else {
+  if (oledReady) {
     display.clearDisplay();
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
@@ -384,6 +384,8 @@ void setup() {
     display.println("Brooder Jalak Bali");
     display.println("Booting...");
     display.display();
+  } else {
+    Serial.println("OLED SSD1306 gagal diinisialisasi");
   }
 
   pinMode(ENC_CLK, INPUT_PULLUP);
@@ -402,16 +404,11 @@ void setup() {
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
-  unsigned long start = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) {
-    delay(300);
-  }
 
   espClient.setInsecure();
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
   mqtt.setBufferSize(8192);
   mqtt.setCallback(mqttCallback);
-  ensureMqtt();
   updateOled();
 }
 
