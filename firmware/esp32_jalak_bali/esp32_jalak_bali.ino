@@ -42,7 +42,7 @@ DHT dht(DHTPIN, DHTTYPE);
 TwoWire oledWire = TwoWire(0);
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &oledWire, OLED_RESET);
 
-// Rotary Encoder (SW=3, CLK=1, DT=2)
+// Rotary Encoder (CLK=1, DT=2, SW=3)
 #define ENC_CLK 1
 #define ENC_DT  2
 #define ENC_SW  3
@@ -288,7 +288,7 @@ void uploadPhotoHttpAndNotify() {
           uploadOk = true;
           photoTs = doc["ts"] | (long)millis();
         } else {
-          errMsg = "Respons upload tidak valid: " + resp;
+          errMsg = "Respons upload tidak valid";
         }
         http.end();
         break;
