@@ -12,8 +12,8 @@
 #include "esp_camera.h"
 #include "mbedtls/base64.h"
 
-const char* DEFAULT_WIFI_SSID = "Aryo Sidiq";
-const char* DEFAULT_WIFI_PASS = "cukitooo";
+const char* PRIMARY_WIFI_SSID = "Aryo Sidiq";
+const char* PRIMARY_WIFI_PASS = "cukitooo";
 const char* AP_SSID           = "BrooderJalak-Setup";
 const char* AP_PASS           = "12345678";
 
@@ -86,15 +86,17 @@ float cachedHum = NAN;
 unsigned long lastDhtReadMs = 0;
 unsigned long lastPubMs = 0;
 unsigned long lastOledMs = 0;
-unsigned long wifiConnectStartMs = 0;
+unsigned long attemptStartMs = 0;
+unsigned long lastPrimaryRetryMs = 0;
 bool cameraReady = false;
 bool oledReady = false;
 bool portalActive = false;
-bool pendingNewWifi = false;
+bool tryingPrimary = true;
+bool pendingFallbackWifi = false;
 volatile bool captureRequested = false;
 
-String currentWifiSsid = "";
-String currentWifiPass = "";
+String fallbackWifiSsid = "";
+String fallbackWifiPass = "";
 
 Preferences prefs;
 WebServer webServer(80);
@@ -115,7 +117,7 @@ String buildSetupHtml(const String& notice = "") {
   String ipStr = (WiFi.status() == WL_CONNECTED) ? WiFi.localIP().toString() : WiFi.softAPIP().toString();
   String statusStr = (WiFi.status() == WL_CONNECTED)
     ? ("Terhubung ke " + htmlEscape(WiFi.SSID()) + " (" + ipStr + ")")
-    : ("Mode Setup AP: " + String(AP_SSID) + " (" + ipStr + ")");
+    : ("Aryo Sidiq tidak ditemukan | Portal AP: " + String(AP_SSID) + " (" + ipStr + ")");
 
   String html = "<!DOCTYPE html><html lang='id'><head><meta charset='UTF-8'>";
   html += "<meta name='viewport' content='width=device-width,initial-scale=1.0'>";
@@ -127,16 +129,16 @@ String buildSetupHtml(const String& notice = "") {
   html += "input{width:100%;box-sizing:border-box;padding:10px 12px;border-radius:10px;border:1px solid #475569;background:#0f172a;color:#f8fafc;font-size:.95rem}";
   html += "button{width:100%;margin-top:16px;padding:11px;border:0;border-radius:10px;background:#38bdf8;color:#0f172a;font-weight:700;font-size:.95rem;cursor:pointer}";
   html += ".msg{background:rgba(34,197,94,.15);border:1px solid #22c55e;color:#bbf7d0;padding:10px;border-radius:10px;margin-bottom:14px;font-size:.85rem}</style></head><body><div class='box'>";
-  html += "<h2>Pengaturan WiFi ESP32-S3</h2>";
-  html += "<div class='sub'>Status: " + statusStr + "</div>";
+  html += "<h2>Pengaturan WiFi Alternatif</h2>";
+  html += "<div class='sub'>Utama: <strong>Aryo Sidiq</strong> | " + statusStr + "</div>";
   if (notice.length() > 0) {
     html += "<div class='msg'>" + htmlEscape(notice) + "</div>";
   }
   html += "<form method='POST' action='/save'>";
-  html += "<label for='ssid'>Nama WiFi (SSID)</label>";
-  html += "<input id='ssid' name='ssid' type='text' required value='" + htmlEscape(currentWifiSsid) + "' placeholder='Contoh: Aryo Sidiq'>";
-  html += "<label for='pass'>Password WiFi</label>";
-  html += "<input id='pass' name='pass' type='password' value='" + htmlEscape(currentWifiPass) + "' placeholder='Kosongkan jika open WiFi'>";
+  html += "<label for='ssid'>Nama WiFi Alternatif (SSID)</label>";
+  html += "<input id='ssid' name='ssid' type='text' required value='" + htmlEscape(fallbackWifiSsid) + "' placeholder='Masukkan SSID WiFi'>";
+  html += "<label for='pass'>Password WiFi Alternatif</label>";
+  html += "<input id='pass' name='pass' type='password' value='" + htmlEscape(fallbackWifiPass) + "' placeholder='Kosongkan jika open WiFi'>";
   html += "<button type='submit'>Simpan &amp; Hubungkan</button></form></div></body></html>";
   return html;
 }
@@ -147,26 +149,32 @@ void startSetupPortal() {
   WiFi.softAP(AP_SSID, AP_PASS);
   dnsServer.start(53, "*", WiFi.softAPIP());
   portalActive = true;
-  Serial.print("Setup WiFi AP aktif: ");
+  Serial.println("Aryo Sidiq tidak ditemukan/gagal, aktifkan portal setup");
+  Serial.print("AP aktif: ");
   Serial.print(AP_SSID);
   Serial.print(" -> http://");
   Serial.println(WiFi.softAPIP());
 }
 
-void beginStationConnect(const String& ssid, const String& pass) {
-  WiFi.disconnect(false);
-  delay(100);
-  if (!portalActive) {
+void startStationAttempt(const char* ssid, const char* pass, bool primary) {
+  tryingPrimary = primary;
+  WiFi.disconnect(true);
+  delay(120);
+  if (portalActive) {
+    WiFi.mode(WIFI_AP_STA);
+  } else {
     WiFi.mode(WIFI_STA);
   }
-  WiFi.setAutoReconnect(true);
-  if (pass.length() > 0) {
-    WiFi.begin(ssid.c_str(), pass.c_str());
+  WiFi.setAutoReconnect(false);
+  if (pass && strlen(pass) > 0) {
+    WiFi.begin(ssid, pass);
   } else {
-    WiFi.begin(ssid.c_str());
+    WiFi.begin(ssid);
   }
-  wifiConnectStartMs = millis();
-  Serial.println("Menghubungkan ke WiFi: " + ssid);
+  attemptStartMs = millis();
+  Serial.print("Mencoba WiFi ");
+  Serial.print(primary ? "utama: " : "alternatif: ");
+  Serial.println(ssid);
 }
 
 void setupWebRoutes() {
@@ -181,15 +189,15 @@ void setupWebRoutes() {
       webServer.send(400, "text/html", buildSetupHtml("SSID tidak boleh kosong."));
       return;
     }
-    currentWifiSsid = newSsid;
-    currentWifiPass = newPass;
+    fallbackWifiSsid = newSsid;
+    fallbackWifiPass = newPass;
     prefs.begin("brooder_wifi", false);
-    prefs.putString("ssid", currentWifiSsid);
-    prefs.putString("pass", currentWifiPass);
+    prefs.putString("alt_ssid", fallbackWifiSsid);
+    prefs.putString("alt_pass", fallbackWifiPass);
     prefs.end();
 
-    webServer.send(200, "text/html", buildSetupHtml("Tersimpan! ESP32-S3 sedang menghubungkan ke " + newSsid + "..."));
-    pendingNewWifi = true;
+    webServer.send(200, "text/html", buildSetupHtml("Tersimpan! Mencoba menghubungkan ke " + newSsid + "..."));
+    pendingFallbackWifi = true;
   });
   webServer.onNotFound([]() {
     if (WiFi.status() != WL_CONNECTED) {
@@ -465,28 +473,44 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 }
 
 void ensureWiFi() {
-  if (pendingNewWifi) {
-    pendingNewWifi = false;
-    delay(250);
-    beginStationConnect(currentWifiSsid, currentWifiPass);
+  if (pendingFallbackWifi) {
+    pendingFallbackWifi = false;
+    startSetupPortal();
+    startStationAttempt(fallbackWifiSsid.c_str(), fallbackWifiPass.c_str(), false);
     return;
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    static bool printedIp = false;
-    if (!printedIp) {
+    static String lastLoggedSsid = "";
+    if (WiFi.SSID() != lastLoggedSsid) {
+      lastLoggedSsid = WiFi.SSID();
       Serial.print("WiFi terhubung ke ");
       Serial.print(WiFi.SSID());
-      Serial.print(" | IP: http://");
+      Serial.print(" | IP: ");
       Serial.println(WiFi.localIP());
-      printedIp = true;
     }
     return;
   }
 
-  if (!portalActive && (millis() - wifiConnectStartMs >= 15000)) {
-    startSetupPortal();
-    beginStationConnect(currentWifiSsid, currentWifiPass);
+  unsigned long now = millis();
+  if (tryingPrimary) {
+    if (now - attemptStartMs >= 12000) {
+      startSetupPortal();
+      if (fallbackWifiSsid.length() > 0) {
+        startStationAttempt(fallbackWifiSsid.c_str(), fallbackWifiPass.c_str(), false);
+      } else {
+        tryingPrimary = false;
+        lastPrimaryRetryMs = now;
+      }
+    }
+  } else {
+    if (fallbackWifiSsid.length() > 0 && (now - attemptStartMs >= 12000)) {
+      startStationAttempt(fallbackWifiSsid.c_str(), fallbackWifiPass.c_str(), false);
+    }
+    if (now - lastPrimaryRetryMs >= 30000) {
+      lastPrimaryRetryMs = now;
+      startStationAttempt(PRIMARY_WIFI_SSID, PRIMARY_WIFI_PASS, true);
+    }
   }
 }
 
@@ -540,20 +564,13 @@ void setup() {
     Serial.println("OLED SSD1306 gagal diinisialisasi");
   }
 
-  prefs.begin("brooder_wifi", false);
-  currentWifiSsid = prefs.getString("ssid", "");
-  currentWifiPass = prefs.getString("pass", "");
-  if (currentWifiSsid.length() == 0) {
-    currentWifiSsid = DEFAULT_WIFI_SSID;
-    currentWifiPass = DEFAULT_WIFI_PASS;
-    prefs.putString("ssid", currentWifiSsid);
-    prefs.putString("pass", currentWifiPass);
-  }
+  prefs.begin("brooder_wifi", true);
+  fallbackWifiSsid = prefs.getString("alt_ssid", "");
+  fallbackWifiPass = prefs.getString("alt_pass", "");
   prefs.end();
 
-  WiFi.mode(WIFI_STA);
   setupWebRoutes();
-  beginStationConnect(currentWifiSsid, currentWifiPass);
+  startStationAttempt(PRIMARY_WIFI_SSID, PRIMARY_WIFI_PASS, true);
 
   espClient.setInsecure();
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
