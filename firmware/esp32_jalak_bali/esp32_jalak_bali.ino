@@ -3,6 +3,9 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <DHT.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 #include "esp_camera.h"
 #include "mbedtls/base64.h"
 
@@ -26,6 +29,21 @@ const char* TOPIC_CMD_CAPTURE = "SmartBrooder/jalak/cmd/capture";
 #define DHTPIN 14
 #define DHTTYPE DHT22
 DHT dht(DHTPIN, DHTTYPE);
+
+// OLED SSD1306 (Gunakan pin I2C terpisah dari kamera GPIO 4 & 5)
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET -1
+#define OLED_ADDR 0x3C
+#define OLED_SDA 19
+#define OLED_SCL 20
+TwoWire oledWire = TwoWire(1);
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &oledWire, OLED_RESET);
+
+// Rotary Encoder (Tekan SW = Menu/OK, Kanan CW = +0.1 Batas Atas, Kiri CCW = -0.1 Batas Bawah)
+#define ENC_CLK 1
+#define ENC_DT  2
+#define ENC_SW  3
 
 const int RELAY_PINS[4] = {41, 42, 47, 48};
 const char* RELAY_TYPES[4] = {"heat", "heat", "fan", "fan"};
@@ -53,12 +71,19 @@ bool autoMode = true;
 float minTemp = 32.5;
 float maxTemp = 33.5;
 
+bool encMenuActive = false;
+int lastEncClk = HIGH;
+int lastEncSw = HIGH;
+unsigned long lastSwMs = 0;
+
 float cachedTemp = NAN;
 float cachedHum = NAN;
 unsigned long lastDhtReadMs = 0;
 unsigned long lastPubMs = 0;
+unsigned long lastOledMs = 0;
 unsigned long lastWifiCheckMs = 0;
 bool cameraReady = false;
+bool oledReady = false;
 volatile bool captureRequested = false;
 
 WiFiClientSecure espClient;
@@ -75,6 +100,120 @@ void setAllRelaysOff() {
   for (int i = 0; i < 4; i++) {
     writeRelayPin(i, false);
   }
+}
+
+void updateOled() {
+  if (!oledReady) return;
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+
+  if (encMenuActive) {
+    display.println("[SET BATAS SUHU]");
+  } else {
+    display.printf("BROODER %s\n", autoMode ? "AUTO" : "MAN");
+  }
+
+  if (isnan(cachedTemp) || isnan(cachedHum)) {
+    display.println("Suhu: --.-C | Hum:--%");
+  } else {
+    display.printf("Suhu: %.1fC | Hum:%.0f%%\n", cachedTemp, cachedHum);
+  }
+
+  display.printf("Min:%.1fC  Max:%.1fC\n", minTemp, maxTemp);
+  display.printf("R:%d%d%d%d | %s\n",
+                 relayState[0] ? 1 : 0,
+                 relayState[1] ? 1 : 0,
+                 relayState[2] ? 1 : 0,
+                 relayState[3] ? 1 : 0,
+                 mqtt.connected() ? "MQTT:OK" : "MQTT:--");
+
+  if (encMenuActive) {
+    display.println("R:+Max L:-Min SW:OK");
+  } else {
+    display.println("SW:Set Suhu | WiFi:" + String(WiFi.status() == WL_CONNECTED ? "OK" : "--"));
+  }
+
+  display.display();
+}
+
+void publishTelemetry() {
+  if (!mqtt.connected()) return;
+  JsonDocument doc;
+  if (isnan(cachedTemp)) doc["temp"] = nullptr;
+  else doc["temp"] = serialized(String(cachedTemp, 1));
+
+  if (isnan(cachedHum)) doc["hum"] = nullptr;
+  else doc["hum"] = serialized(String(cachedHum, 1));
+
+  doc["auto"] = autoMode;
+  doc["minTemp"] = serialized(String(minTemp, 1));
+  doc["maxTemp"] = serialized(String(maxTemp, 1));
+  doc["encMenu"] = encMenuActive;
+
+  JsonArray rArr = doc["relays"].to<JsonArray>();
+  for (int i = 0; i < 4; i++) {
+    rArr.add(relayState[i] ? 1 : 0);
+  }
+
+  char payload[280];
+  serializeJson(doc, payload, sizeof(payload));
+  mqtt.publish(TOPIC_TELEMETRY, payload, true);
+}
+
+void applyAutoControl() {
+  if (!autoMode) return;
+  if (isnan(cachedTemp)) {
+    setAllRelaysOff();
+    return;
+  }
+  for (int i = 0; i < 4; i++) {
+    bool wantOn = false;
+    if (cachedTemp < minTemp && strcmp(RELAY_TYPES[i], "heat") == 0) {
+      wantOn = true;
+    } else if (cachedTemp > maxTemp && strcmp(RELAY_TYPES[i], "fan") == 0) {
+      wantOn = true;
+    }
+    writeRelayPin(i, wantOn);
+  }
+}
+
+void handleRotaryEncoder() {
+  unsigned long now = millis();
+  int swVal = digitalRead(ENC_SW);
+  if (lastEncSw == HIGH && swVal == LOW && (now - lastSwMs > 250)) {
+    lastSwMs = now;
+    if (!encMenuActive) {
+      encMenuActive = true;
+      autoMode = false;
+      Serial.println("Encoder: Menu Suhu Fisik AKTIF (Putar Kanan +0.1 Max, Kiri -0.1 Min, Tekan OK)");
+    } else {
+      encMenuActive = false;
+      Serial.printf("Encoder: OK disimpan -> Min: %.1f C, Max: %.1f C\n", minTemp, maxTemp);
+      publishTelemetry();
+    }
+    updateOled();
+  }
+  lastEncSw = swVal;
+
+  int clkVal = digitalRead(ENC_CLK);
+  if (clkVal != lastEncClk && clkVal == LOW) {
+    if (encMenuActive) {
+      if (digitalRead(ENC_DT) != clkVal) {
+        maxTemp = roundf((maxTemp + 0.1f) * 10.0f) / 10.0f;
+        if (maxTemp <= minTemp) maxTemp = roundf((minTemp + 0.1f) * 10.0f) / 10.0f;
+        Serial.printf("Encoder Kanan (Batas Atas): %.1f C\n", maxTemp);
+      } else {
+        minTemp = roundf((minTemp - 0.1f) * 10.0f) / 10.0f;
+        if (minTemp >= maxTemp) minTemp = roundf((maxTemp - 0.1f) * 10.0f) / 10.0f;
+        Serial.printf("Encoder Kiri (Batas Bawah): %.1f C\n", minTemp);
+      }
+      updateOled();
+      publishTelemetry();
+    }
+  }
+  lastEncClk = clkVal;
 }
 
 bool initCamera() {
@@ -100,7 +239,7 @@ bool initCamera() {
   config.xclk_freq_hz = 16000000;
   config.pixel_format = PIXFORMAT_JPEG;
   config.frame_size   = FRAMESIZE_QVGA;
-  config.jpeg_quality = 25;
+  config.jpeg_quality = 26;
   config.fb_count     = 1;
   config.grab_mode    = CAMERA_GRAB_LATEST;
 
@@ -159,46 +298,6 @@ void sendCapturedPhotoMqtt() {
   Serial.printf("Foto terkirim (%d bagian)\n", totalChunks);
 }
 
-void publishTelemetry() {
-  if (!mqtt.connected()) return;
-  JsonDocument doc;
-  if (isnan(cachedTemp)) doc["temp"] = nullptr;
-  else doc["temp"] = serialized(String(cachedTemp, 1));
-
-  if (isnan(cachedHum)) doc["hum"] = nullptr;
-  else doc["hum"] = serialized(String(cachedHum, 1));
-
-  doc["auto"] = autoMode;
-  doc["minTemp"] = serialized(String(minTemp, 1));
-  doc["maxTemp"] = serialized(String(maxTemp, 1));
-
-  JsonArray rArr = doc["relays"].to<JsonArray>();
-  for (int i = 0; i < 4; i++) {
-    rArr.add(relayState[i] ? 1 : 0);
-  }
-
-  char payload[256];
-  serializeJson(doc, payload, sizeof(payload));
-  mqtt.publish(TOPIC_TELEMETRY, payload, true);
-}
-
-void applyAutoControl() {
-  if (!autoMode) return;
-  if (isnan(cachedTemp)) {
-    setAllRelaysOff();
-    return;
-  }
-  for (int i = 0; i < 4; i++) {
-    bool wantOn = false;
-    if (cachedTemp < minTemp && strcmp(RELAY_TYPES[i], "heat") == 0) {
-      wantOn = true;
-    } else if (cachedTemp > maxTemp && strcmp(RELAY_TYPES[i], "fan") == 0) {
-      wantOn = true;
-    }
-    writeRelayPin(i, wantOn);
-  }
-}
-
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   String msg;
   msg.reserve(length + 1);
@@ -220,11 +319,13 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     int st = doc["state"] | 0;
     if (ch >= 1 && ch <= 4) {
       autoMode = false;
+      encMenuActive = false;
       writeRelayPin(ch - 1, st != 0);
       publishTelemetry();
     }
   } else if (t == TOPIC_CMD_MODE) {
     autoMode = doc["auto"] | true;
+    if (autoMode) encMenuActive = false;
     if (autoMode) applyAutoControl();
     publishTelemetry();
   } else if (t == TOPIC_CMD_LIMITS) {
@@ -234,9 +335,11 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     publishTelemetry();
   } else if (t == TOPIC_CMD_OFF) {
     autoMode = false;
+    encMenuActive = false;
     setAllRelaysOff();
     publishTelemetry();
   }
+  updateOled();
 }
 
 void ensureWiFi() {
@@ -269,6 +372,26 @@ void setup() {
   Serial.begin(115200);
   dht.begin();
 
+  oledWire.begin(OLED_SDA, OLED_SCL);
+  oledReady = display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR);
+  if (!oledReady) {
+    Serial.println("OLED SSD1306 gagal diinisialisasi");
+  } else {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 0);
+    display.println("Brooder Jalak Bali");
+    display.println("Booting...");
+    display.display();
+  }
+
+  pinMode(ENC_CLK, INPUT_PULLUP);
+  pinMode(ENC_DT, INPUT_PULLUP);
+  pinMode(ENC_SW, INPUT_PULLUP);
+  lastEncClk = digitalRead(ENC_CLK);
+  lastEncSw = digitalRead(ENC_SW);
+
   for (int i = 0; i < 4; i++) {
     pinMode(RELAY_PINS[i], OUTPUT);
     writeRelayPin(i, false);
@@ -289,12 +412,14 @@ void setup() {
   mqtt.setBufferSize(8192);
   mqtt.setCallback(mqttCallback);
   ensureMqtt();
+  updateOled();
 }
 
 void loop() {
   ensureWiFi();
   ensureMqtt();
   mqtt.loop();
+  handleRotaryEncoder();
 
   if (captureRequested) {
     captureRequested = false;
@@ -314,6 +439,11 @@ void loop() {
       cachedHum = NAN;
     }
     applyAutoControl();
+  }
+
+  if (now - lastOledMs >= 1000) {
+    lastOledMs = now;
+    updateOled();
   }
 
   if (now - lastPubMs >= 2500) {
