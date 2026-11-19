@@ -1,3 +1,6 @@
+import fs from "fs";
+import path from "path";
+
 export const config = {
   api: {
     bodyParser: false
@@ -28,11 +31,10 @@ export default async function handler(req, res) {
     }
 
     const ts = Date.now();
-    globalThis.__latestJalakPhoto = {
-      buffer,
-      ts,
-      size: buffer.length
-    };
+    globalThis.__latestJalakPhoto = { buffer, ts, size: buffer.length };
+    try {
+      fs.writeFileSync(path.join("/tmp", "latest_jalak.jpg"), buffer);
+    } catch (_) {}
 
     return res.status(200).json({
       ok: true,
