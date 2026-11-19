@@ -100,7 +100,7 @@ bool initCamera() {
   config.xclk_freq_hz = 16000000;
   config.pixel_format = PIXFORMAT_JPEG;
   config.frame_size   = FRAMESIZE_QVGA;
-  config.jpeg_quality = 22;
+  config.jpeg_quality = 25;
   config.fb_count     = 1;
   config.grab_mode    = CAMERA_GRAB_LATEST;
 
@@ -132,7 +132,7 @@ void sendCapturedPhotoMqtt() {
   b64Buf[b64Len] = '\0';
   esp_camera_fb_return(fb);
 
-  const size_t CHUNK_SIZE = 1400;
+  const size_t CHUNK_SIZE = 4096;
   int totalChunks = (int)((b64Len + CHUNK_SIZE - 1) / CHUNK_SIZE);
   unsigned long shotId = millis();
 
@@ -152,7 +152,7 @@ void sendCapturedPhotoMqtt() {
     serializeJson(pkt, out);
     mqtt.publish(TOPIC_PHOTO, out.c_str(), false);
     mqtt.loop();
-    delay(25);
+    delay(10);
   }
 
   free(b64Buf);
@@ -286,7 +286,7 @@ void setup() {
 
   espClient.setInsecure();
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
-  mqtt.setBufferSize(2048);
+  mqtt.setBufferSize(8192);
   mqtt.setCallback(mqttCallback);
   ensureMqtt();
 }
