@@ -1,6 +1,7 @@
 const DEFAULT_WSS_URL = "wss://w13913d1.ala.us-east-1.emqxsl.com:8084/mqtt";
 const DEFAULT_PREFIX = "SmartBrooder/jalak";
 const ESP_STALE_MS = 10000;
+const DEG = "\u00b0C";
 
 const relays = [
   { id: 1, label: "CH1: Bohlam 1 (Heat)", on: false },
@@ -43,6 +44,14 @@ brokerInput.value = brokerUrl;
 prefixInput.value = topicPrefix;
 userInput.value = mqttUser;
 passInput.value = mqttPass;
+
+camImg.onerror = () => {
+  camImg.style.display = "none";
+  camPlaceholder.style.display = "block";
+  camPlaceholder.textContent = "Gambar tidak dapat dimuat. Silakan coba ambil foto lagi.";
+  photoStatusEl.textContent = "Gagal merender gambar di browser.";
+  captureBtn.disabled = false;
+};
 
 function setBadge(el, text, type = "") {
   el.textContent = text;
@@ -89,15 +98,15 @@ function handlePhotoMessage(rawMsg) {
       captureBtn.disabled = false;
       return;
     }
-    if (data.url) {
-      camImg.src = data.url;
-      camImg.style.display = "block";
+    if (typeof data.url === "string" && data.url.startsWith("data:image/jpeg;base64,")) {
       camPlaceholder.style.display = "none";
+      camImg.style.display = "block";
+      camImg.src = data.url;
       photoStatusEl.textContent = `Foto diterima jam ${new Date().toLocaleTimeString("id-ID")}`;
       captureBtn.disabled = false;
       return;
     }
-    photoStatusEl.textContent = "Respons foto tidak memuat URL.";
+    photoStatusEl.textContent = "Format URL foto tidak dikenali.";
     captureBtn.disabled = false;
   } catch (err) {
     photoStatusEl.textContent = `Payload foto rusak/terpotong: ${err.message}`;
@@ -153,8 +162,8 @@ function connectMqtt() {
       const tempValid = typeof data.temp === "number" && !Number.isNaN(data.temp);
       const humValid = typeof data.hum === "number" && !Number.isNaN(data.hum);
 
-      tempEl.textContent = tempValid ? `${data.temp.toFixed(1)} Â°C` : "--.- Â°C";
-      humEl.textContent = `Kelembapan: ${humValid ? `${data.hum.toFixed(1)}%` : "--%"} | Min: ${data.minTemp ?? "--"}Â°C | Max: ${data.maxTemp ?? "--"}Â°C`;
+      tempEl.textContent = tempValid ? `${data.temp.toFixed(1)} ${DEG}` : `--.- ${DEG}`;
+      humEl.textContent = `Kelembapan: ${humValid ? `${data.hum.toFixed(1)}%` : "--%"} | Min: ${data.minTemp ?? "--"}${DEG} | Max: ${data.maxTemp ?? "--"}${DEG}`;
       sensorAlertEl.style.display = (!tempValid || !humValid) ? "block" : "none";
 
       if (typeof data.auto === "boolean") {
@@ -181,7 +190,7 @@ captureBtn.onclick = () => {
     return;
   }
   captureBtn.disabled = true;
-  photoStatusEl.textContent = "Memotret & mengunggah foto resolusi tinggi...";
+  photoStatusEl.textContent = "Memotret & mengunggah foto...";
   publishJson(`${topicPrefix}/cmd/capture`, { capture: 1 });
   setTimeout(() => { captureBtn.disabled = false; }, 15000);
 };

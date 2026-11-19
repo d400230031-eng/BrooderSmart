@@ -1,6 +1,3 @@
-import fs from "fs";
-import path from "path";
-
 export const config = {
   api: {
     bodyParser: false
@@ -30,18 +27,13 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Empty image payload" });
     }
 
-    const tmpFile = path.join("/tmp", "latest_jalak.jpg");
-    fs.writeFileSync(tmpFile, buffer);
-
-    const ts = Date.now();
-    const host = req.headers["x-forwarded-host"] || req.headers.host || "smartbrooder-three.vercel.app";
-    const proto = req.headers["x-forwarded-proto"] || "https";
-    const photoUrl = `${proto}://${host}/api/photo?t=${ts}`;
+    const base64 = buffer.toString("base64");
+    const dataUrl = `data:image/jpeg;base64,${base64}`;
 
     return res.status(200).json({
       ok: true,
       size: buffer.length,
-      url: photoUrl
+      url: dataUrl
     });
   } catch (err) {
     return res.status(500).json({ error: err.message || "Upload failed" });
