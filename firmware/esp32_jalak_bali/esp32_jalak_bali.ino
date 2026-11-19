@@ -9,8 +9,8 @@
 #include "esp_camera.h"
 #include "mbedtls/base64.h"
 
-const char* WIFI_SSID = "MV69509769";
-const char* WIFI_PASS = "12345678";
+const char* WIFI_SSID = "Aryo Sidiq";
+const char* WIFI_PASS = "cukitooo";
 
 const char* MQTT_HOST      = "w13913d1.ala.us-east-1.emqxsl.com";
 const int   MQTT_PORT      = 8883;
