@@ -9,8 +9,8 @@
 #include <Adafruit_SSD1306.h>
 #include "esp_camera.h"
 
-const char* WIFI_SSID = "Aryo Sidiq";
-const char* WIFI_PASS = "cukitooo";
+const char* WIFI_SSID = "MV69509769";
+const char* WIFI_PASS = "12345678";
 
 const char* MQTT_HOST      = "w13913d1.ala.us-east-1.emqxsl.com";
 const int   MQTT_PORT      = 8883;
