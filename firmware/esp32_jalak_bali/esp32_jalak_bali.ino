@@ -37,7 +37,7 @@ DHT dht(DHTPIN, DHTTYPE);
 #define OLED_ADDR 0x3C
 #define OLED_SDA 19
 #define OLED_SCL 20
-TwoWire oledWire = TwoWire(1);
+TwoWire oledWire = TwoWire(0);
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &oledWire, OLED_RESET);
 
 // Rotary Encoder (SW=3, CLK=1, DT=2)
@@ -374,20 +374,6 @@ void setup() {
   Serial.begin(115200);
   dht.begin();
 
-  oledWire.begin(OLED_SDA, OLED_SCL);
-  oledReady = display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR);
-  if (oledReady) {
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
-    display.setCursor(0, 0);
-    display.println("Brooder Jalak Bali");
-    display.println("Booting...");
-    display.display();
-  } else {
-    Serial.println("OLED SSD1306 gagal diinisialisasi");
-  }
-
   pinMode(ENC_CLK, INPUT_PULLUP);
   pinMode(ENC_DT, INPUT_PULLUP);
   pinMode(ENC_SW, INPUT_PULLUP);
@@ -399,8 +385,23 @@ void setup() {
     writeRelayPin(i, false);
   }
 
+  // Kamera diinisialisasi lebih dulu sebelum I2C OLED
   cameraReady = initCamera();
   if (!cameraReady) Serial.println("Kamera gagal diinisialisasi");
+
+  oledWire.begin(OLED_SDA, OLED_SCL);
+  oledReady = display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR);
+  if (oledReady) {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 0);
+    display.println("Brooder Jalak Bali");
+    display.println("Ready");
+    display.display();
+  } else {
+    Serial.println("OLED SSD1306 gagal diinisialisasi");
+  }
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
