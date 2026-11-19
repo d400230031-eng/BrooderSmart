@@ -19,7 +19,7 @@ const char* MQTT_USER      = "SmartBrooder";
 const char* MQTT_PASS      = "12345678";
 
 // Ganti ke URL endpoint upload Anda jika berbeda dari deployment Vercel
-const char* PHOTO_UPLOAD_URL = "https://brooder-smart.vercel.app/api/upload";
+const char* PHOTO_UPLOAD_URL = "https://smartbrooder-three.vercel.app/api/upload";
 
 const char* TOPIC_TELEMETRY   = "SmartBrooder/jalak/telemetry";
 const char* TOPIC_PHOTO       = "SmartBrooder/jalak/photo";
