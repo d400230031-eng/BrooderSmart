@@ -189,6 +189,8 @@ void handleRotaryEncoder() {
       autoMode = false;
     } else {
       encMenuActive = false;
+      autoMode = true;
+      applyAutoControl();
       publishTelemetry();
     }
     updateOled();
