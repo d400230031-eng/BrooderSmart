@@ -30,9 +30,9 @@ const char* TOPIC_CMD_CAPTURE = "SmartBrooder/jalak/cmd/capture";
 #define DHTTYPE DHT22
 DHT dht(DHTPIN, DHTTYPE);
 
-// OLED SSD1306 (I2C SDA=19, SCL=20, Alamat 0x3C)
+// OLED SSD1306 128x32 (I2C SDA=19, SCL=20, Alamat 0x3C)
 #define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 64
+#define SCREEN_HEIGHT 32
 #define OLED_RESET -1
 #define OLED_ADDR 0x3C
 #define OLED_SDA 19
@@ -110,31 +110,29 @@ void updateOled() {
   display.setCursor(0, 0);
 
   if (encMenuActive) {
-    display.println("[SET BATAS SUHU]");
+    display.printf("SET L:%.1f H:%.1f\n", minTemp, maxTemp);
+  } else if (isnan(cachedTemp) || isnan(cachedHum)) {
+    display.printf("%s T:--.-C H:--%%\n", autoMode ? "AUTO" : "MAN");
   } else {
-    display.printf("BROODER %s\n", autoMode ? "AUTO" : "MAN");
+    display.printf("%s T:%.1fC H:%.0f%%\n", autoMode ? "AUTO" : "MAN", cachedTemp, cachedHum);
   }
 
-  if (isnan(cachedTemp) || isnan(cachedHum)) {
-    display.println("Suhu: --.-C | Hum:--%");
-  } else {
-    display.printf("Suhu: %.1fC | Hum:%.0f%%\n", cachedTemp, cachedHum);
-  }
-
-  display.printf("Min:%.1fC  Max:%.1fC\n", minTemp, maxTemp);
-  display.printf("R:%d%d%d%d | %s\n",
+  display.setCursor(0, 12);
+  display.printf("L:%.1f H:%.1f R:%d%d%d%d\n",
+                 minTemp, maxTemp,
                  relayState[0] ? 1 : 0,
                  relayState[1] ? 1 : 0,
                  relayState[2] ? 1 : 0,
-                 relayState[3] ? 1 : 0,
-                 mqtt.connected() ? "MQTT:OK" : "MQTT:--");
+                 relayState[3] ? 1 : 0);
 
+  display.setCursor(0, 24);
   if (encMenuActive) {
-    display.println("R:+Max L:-Min SW:OK");
+    display.print("R:+H L:-L SW:OK");
   } else {
-    display.printf("WiFi:%s | Cam:%s\n",
-                   WiFi.status() == WL_CONNECTED ? "OK" : "--",
-                   cameraReady ? "OK" : "ERR");
+    display.printf("W:%s M:%s C:%s",
+                 WiFi.status() == WL_CONNECTED ? "OK" : "--",
+                 mqtt.connected() ? "OK" : "--",
+                 cameraReady ? "OK" : "ERR");
   }
 
   display.display();
@@ -236,10 +234,18 @@ bool initCamera() {
   config.pin_reset    = RESET_GPIO_NUM;
   config.xclk_freq_hz = 16000000;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size   = FRAMESIZE_QQVGA;
-  config.jpeg_quality = 28;
-  config.fb_count     = 1;
-  config.grab_mode    = CAMERA_GRAB_LATEST;
+
+  if (psramFound()) {
+    config.frame_size   = FRAMESIZE_SVGA;
+    config.jpeg_quality = 14;
+    config.fb_count     = 1;
+    config.grab_mode    = CAMERA_GRAB_LATEST;
+  } else {
+    config.frame_size   = FRAMESIZE_QVGA;
+    config.jpeg_quality = 18;
+    config.fb_count     = 1;
+    config.grab_mode    = CAMERA_GRAB_WHEN_EMPTY;
+  }
 
   return (esp_camera_init(&config) == ESP_OK);
 }
@@ -272,7 +278,7 @@ void sendCapturedPhotoMqtt() {
   b64Buf[b64Len] = '\0';
   esp_camera_fb_return(fb);
 
-  const size_t CHUNK_SIZE = 2048;
+  const size_t CHUNK_SIZE = 3072;
   int totalChunks = (int)((b64Len + CHUNK_SIZE - 1) / CHUNK_SIZE);
   unsigned long shotId = millis();
 
@@ -292,7 +298,7 @@ void sendCapturedPhotoMqtt() {
     serializeJson(pkt, out);
     mqtt.publish(TOPIC_PHOTO, out.c_str(), false);
     mqtt.loop();
-    delay(35);
+    delay(25);
   }
 
   free(b64Buf);
@@ -385,7 +391,6 @@ void setup() {
     writeRelayPin(i, false);
   }
 
-  // Kamera diinisialisasi lebih dulu sebelum I2C OLED
   cameraReady = initCamera();
   if (!cameraReady) Serial.println("Kamera gagal diinisialisasi");
 
@@ -395,9 +400,10 @@ void setup() {
     display.clearDisplay();
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
-    display.setCursor(0, 0);
+    display.setCursor(0, 4);
     display.println("Brooder Jalak Bali");
-    display.println("Ready");
+    display.setCursor(0, 18);
+    display.println("Ready (128x32)");
     display.display();
   } else {
     Serial.println("OLED SSD1306 gagal diinisialisasi");

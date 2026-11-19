@@ -6,37 +6,50 @@
   <title>EMQX Monitoring Anakan Jalak Bali</title>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <style>
-    :root { --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --muted: #94a3b8; --accent: #38bdf8; --ok: #22c55e; --err: #ef4444; --warn: #f59e0b; }
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
-    body { background: var(--bg); color: var(--text); padding: 20px; }
-    .container { max-width: 980px; margin: 0 auto; display: grid; gap: 18px; }
-    header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
-    h1 { font-size: 1.3rem; }
+    :root { --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --muted: #94a3b8; --accent: #38bdf8; --ok: #22c55e; --err: #ef4444; --warn: #f59e0b; --border: #334155; }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 16px; min-height: 100vh; }
+    .container { max-width: 1120px; margin: 0 auto; display: grid; gap: 16px; }
+    header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; }
+    h1 { font-size: clamp(1.05rem, 2.2vw, 1.35rem); font-weight: 700; }
     .badges { display: flex; gap: 8px; flex-wrap: wrap; }
-    .badge { background: var(--card); border: 1px solid #334155; padding: 6px 12px; border-radius: 999px; font-size: 0.82rem; color: var(--muted); }
+    .badge { background: #0f172a; border: 1px solid var(--border); padding: 6px 12px; border-radius: 999px; font-size: 0.8rem; color: var(--muted); font-weight: 500; }
     .badge.ok { border-color: var(--ok); color: #86efac; }
     .badge.err { border-color: var(--err); color: #fca5a5; }
     .badge.warn { border-color: var(--warn); color: #fcd34d; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
-    .card { background: var(--card); border: 1px solid #334155; border-radius: 12px; padding: 16px; }
-    .card h2 { font-size: 1rem; color: var(--muted); margin-bottom: 10px; }
-    .temp-val { font-size: 2.4rem; font-weight: 700; color: var(--accent); }
-    .sub { font-size: 0.85rem; color: var(--muted); margin-top: 6px; line-height: 1.4; }
-    .alert-box { margin-top: 10px; padding: 8px 10px; border-radius: 8px; font-size: 0.82rem; background: rgba(245, 158, 11, 0.14); border: 1px solid var(--warn); color: #fde68a; display: none; }
-    .relay-list { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .relay-btn { background: #0f172a; color: var(--text); border: 1px solid #475569; border-radius: 10px; padding: 12px; text-align: left; cursor: pointer; transition: 0.15s; }
-    .relay-btn.on { border-color: var(--ok); background: rgba(34, 197, 94, 0.14); }
-    .relay-btn .name { font-weight: 600; font-size: 0.92rem; display: block; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+    .card h2 { font-size: 0.95rem; color: var(--muted); font-weight: 600; }
+    .temp-val { font-size: clamp(2rem, 4vw, 2.6rem); font-weight: 800; color: var(--accent); line-height: 1.1; }
+    .sub { font-size: 0.84rem; color: var(--muted); line-height: 1.45; }
+    .alert-box { padding: 9px 12px; border-radius: 10px; font-size: 0.82rem; background: rgba(245, 158, 11, 0.14); border: 1px solid var(--warn); color: #fde68a; display: none; line-height: 1.4; }
+    .relay-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .relay-btn { background: #0f172a; color: var(--text); border: 1px solid #475569; border-radius: 10px; padding: 12px; text-align: left; cursor: pointer; transition: 0.15s; min-height: 62px; }
+    .relay-btn:hover { border-color: var(--accent); }
+    .relay-btn.on { border-color: var(--ok); background: rgba(34, 197, 94, 0.15); }
+    .relay-btn .name { font-weight: 600; font-size: 0.9rem; display: block; }
     .relay-btn .state { font-size: 0.78rem; color: var(--muted); margin-top: 4px; display: block; }
-    .cam-box { width: 100%; aspect-ratio: 16 / 9; background: #020617; border-radius: 8px; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid #334155; position: relative; }
-    .cam-box img { width: 100%; height: 100%; object-fit: contain; }
-    .cam-placeholder { color: var(--muted); font-size: 0.88rem; padding: 14px; text-align: center; line-height: 1.45; }
-    .controls-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
-    input { background: #0f172a; color: var(--text); border: 1px solid #475569; border-radius: 8px; padding: 8px 10px; font-size: 0.88rem; flex: 1; min-width: 120px; }
-    button.action { background: var(--accent); color: #0f172a; font-weight: 600; border: none; border-radius: 8px; padding: 8px 14px; cursor: pointer; }
-    button.secondary { background: #334155; color: var(--text); font-weight: 600; border: none; border-radius: 8px; padding: 8px 14px; cursor: pointer; }
-    .input-group { flex: 1; min-width: 130px; }
-    .input-group label { display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 3px; }
+    .cam-box { width: 100%; aspect-ratio: 16 / 9; background: #020617; border-radius: 10px; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); position: relative; }
+    .cam-box:fullscreen { width: 100vw; height: 100vh; max-width: none; max-height: none; aspect-ratio: auto; border-radius: 0; border: none; background: #000; }
+    .cam-box img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .cam-box:fullscreen img, #cam-photo:fullscreen { width: 100vw; height: 100vh; max-width: none; max-height: none; object-fit: cover; }
+    .cam-placeholder { color: var(--muted); font-size: 0.88rem; padding: 16px; text-align: center; line-height: 1.5; }
+    .controls-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+    .input-group { flex: 1 1 150px; display: flex; flex-direction: column; gap: 4px; }
+    .input-group label { font-size: 0.76rem; color: var(--muted); }
+    input { width: 100%; background: #0f172a; color: var(--text); border: 1px solid #475569; border-radius: 10px; padding: 9px 12px; font-size: 0.9rem; }
+    button.action { background: var(--accent); color: #0f172a; font-weight: 700; border: none; border-radius: 10px; padding: 10px 15px; cursor: pointer; font-size: 0.88rem; transition: 0.15s; }
+    button.action:hover { filter: brightness(1.08); }
+    button.secondary { background: #334155; color: var(--text); font-weight: 600; border: none; border-radius: 10px; padding: 10px 15px; cursor: pointer; font-size: 0.88rem; transition: 0.15s; }
+    button.secondary:hover { background: #475569; }
+    button:disabled { opacity: 0.55; cursor: not-allowed; }
+    .full-btn { width: 100%; }
+    @media (max-width: 768px) {
+      body { padding: 12px; }
+      .grid { grid-template-columns: 1fr; gap: 12px; }
+      .card { padding: 14px; border-radius: 12px; }
+      .controls-row button.action, .controls-row button.secondary { flex: 1 1 auto; text-align: center; }
+    }
   </style>
 </head>
 <body>
@@ -67,9 +80,7 @@
             <input type="number" step="0.1" id="max-temp" value="33.5" />
           </div>
         </div>
-        <div class="controls-row" style="margin-top: 8px;">
-          <button class="action" id="save-limits" style="width: 100%;">Set Batas Suhu</button>
-        </div>
+        <button class="action full-btn" id="save-limits">Set Batas Suhu</button>
       </div>
 
       <div class="card">
@@ -84,25 +95,40 @@
 
     <div class="card">
       <h2>Foto Kondisi Burung (Via MQTT ESP32-S3)</h2>
-      <div class="cam-box">
+      <div class="cam-box" id="cam-box">
         <img id="cam-photo" alt="Foto Kondisi Burung" style="display: none;" />
         <div class="cam-placeholder" id="cam-placeholder">Klik "Ambil Foto Kondisi Burung" untuk memotret kandang via MQTT.</div>
       </div>
       <div class="controls-row">
         <button class="action" id="capture-btn">Ambil Foto Kondisi Burung</button>
-        <span class="sub" id="photo-status" style="margin-top: 0;">Belum ada foto diambil.</span>
+        <button class="secondary" id="fullscreen-btn">Fullscreen Foto</button>
       </div>
+      <div class="sub" id="photo-status">Belum ada foto diambil.</div>
     </div>
 
     <div class="card">
       <h2>Pengaturan Koneksi EMQX Serverless (WSS)</h2>
       <div class="controls-row">
-        <input type="text" id="broker-url" placeholder="wss://w13913d1.ala.us-east-1.emqxsl.com:8084/mqtt" />
-        <input type="text" id="topic-prefix" placeholder="SmartBrooder/jalak" />
+        <div class="input-group">
+          <label for="broker-url">Broker WSS URL</label>
+          <input type="text" id="broker-url" placeholder="wss://w13913d1.ala.us-east-1.emqxsl.com:8084/mqtt" />
+        </div>
+        <div class="input-group">
+          <label for="topic-prefix">Topic Prefix</label>
+          <input type="text" id="topic-prefix" placeholder="SmartBrooder/jalak" />
+        </div>
       </div>
       <div class="controls-row">
-        <input type="text" id="mqtt-user" placeholder="Username EMQX" />
-        <input type="password" id="mqtt-pass" placeholder="Password EMQX" />
+        <div class="input-group">
+          <label for="mqtt-user">Username EMQX</label>
+          <input type="text" id="mqtt-user" placeholder="Username EMQX" />
+        </div>
+        <div class="input-group">
+          <label for="mqtt-pass">Password EMQX</label>
+          <input type="password" id="mqtt-pass" placeholder="Password EMQX" />
+        </div>
+      </div>
+      <div class="controls-row">
         <button class="action" id="reconnect-mqtt">Hubungkan</button>
         <button class="secondary" id="clear-auth">Hapus Auth</button>
       </div>
