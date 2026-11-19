@@ -12,7 +12,6 @@ const relays = [
 let autoMode = true;
 let client = null;
 let lastTelemetryAt = 0;
-let photoChunks = {};
 
 let brokerUrl = (localStorage.getItem("emqx_wss_url") || DEFAULT_WSS_URL).trim();
 let topicPrefix = (localStorage.getItem("emqx_topic_prefix") || DEFAULT_PREFIX).trim().replace(/\/+$/, "");
@@ -82,23 +81,16 @@ function publishJson(topic, obj) {
   client.publish(topic, JSON.stringify(obj), { qos: 1 });
 }
 
-function handlePhotoChunk(rawMsg) {
+function handlePhotoMessage(rawMsg) {
   try {
-    const pkt = JSON.parse(rawMsg);
-    if (!pkt.id || typeof pkt.idx !== "number" || typeof pkt.total !== "number" || !pkt.data) return;
-
-    if (!photoChunks[pkt.id]) {
-      photoChunks[pkt.id] = { total: pkt.total, parts: new Array(pkt.total), createdAt: Date.now() };
+    const data = JSON.parse(rawMsg);
+    if (data.error) {
+      photoStatusEl.textContent = `Gagal upload foto: ${data.error}`;
+      captureBtn.disabled = false;
+      return;
     }
-    photoChunks[pkt.id].parts[pkt.idx] = pkt.data;
-
-    const received = photoChunks[pkt.id].parts.filter(Boolean).length;
-    photoStatusEl.textContent = `Menerima foto: ${received}/${pkt.total} bagian...`;
-
-    if (received === pkt.total) {
-      const base64Str = photoChunks[pkt.id].parts.join("");
-      delete photoChunks[pkt.id];
-      camImg.src = `data:image/jpeg;base64,${base64Str}`;
+    if (data.url) {
+      camImg.src = data.url;
       camImg.style.display = "block";
       camPlaceholder.style.display = "none";
       photoStatusEl.textContent = `Foto diterima jam ${new Date().toLocaleTimeString("id-ID")}`;
@@ -129,7 +121,7 @@ function connectMqtt() {
   client.on("connect", () => {
     setBadge(mqttStatusEl, "Broker: Terhubung", "ok");
     client.subscribe(`${topicPrefix}/telemetry`, { qos: 1 });
-    client.subscribe(`${topicPrefix}/photo`, { qos: 0 });
+    client.subscribe(`${topicPrefix}/photo`, { qos: 1 });
   });
 
   client.on("offline", () => {
@@ -142,7 +134,7 @@ function connectMqtt() {
 
   client.on("message", (topic, message) => {
     if (topic === `${topicPrefix}/photo`) {
-      handlePhotoChunk(message.toString());
+      handlePhotoMessage(message.toString());
       return;
     }
     if (topic !== `${topicPrefix}/telemetry`) return;
@@ -183,7 +175,7 @@ captureBtn.onclick = () => {
     return;
   }
   captureBtn.disabled = true;
-  photoStatusEl.textContent = "Meminta ESP32-S3 mengambil foto...";
+  photoStatusEl.textContent = "Memotret & mengunggah foto resolusi tinggi...";
   publishJson(`${topicPrefix}/cmd/capture`, { capture: 1 });
   setTimeout(() => { captureBtn.disabled = false; }, 15000);
 };

@@ -1,5 +1,6 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <HTTPClient.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <DHT.h>
@@ -7,7 +8,6 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include "esp_camera.h"
-#include "mbedtls/base64.h"
 
 const char* WIFI_SSID = "Aryo Sidiq";
 const char* WIFI_PASS = "cukitooo";
@@ -17,6 +17,9 @@ const int   MQTT_PORT      = 8883;
 const char* MQTT_CLIENT_ID = "esp32s3-jalak-bali-01";
 const char* MQTT_USER      = "SmartBrooder";
 const char* MQTT_PASS      = "12345678";
+
+// Ganti ke URL endpoint upload Anda jika berbeda dari deployment Vercel
+const char* PHOTO_UPLOAD_URL = "https://brooder-smart.vercel.app/api/upload";
 
 const char* TOPIC_TELEMETRY   = "SmartBrooder/jalak/telemetry";
 const char* TOPIC_PHOTO       = "SmartBrooder/jalak/photo";
@@ -236,13 +239,13 @@ bool initCamera() {
   config.pixel_format = PIXFORMAT_JPEG;
 
   if (psramFound()) {
-    config.frame_size   = FRAMESIZE_SVGA;
-    config.jpeg_quality = 14;
+    config.frame_size   = FRAMESIZE_UXGA;
+    config.jpeg_quality = 10;
     config.fb_count     = 1;
     config.grab_mode    = CAMERA_GRAB_LATEST;
   } else {
-    config.frame_size   = FRAMESIZE_QVGA;
-    config.jpeg_quality = 18;
+    config.frame_size   = FRAMESIZE_VGA;
+    config.jpeg_quality = 14;
     config.fb_count     = 1;
     config.grab_mode    = CAMERA_GRAB_WHEN_EMPTY;
   }
@@ -250,9 +253,9 @@ bool initCamera() {
   return (esp_camera_init(&config) == ESP_OK);
 }
 
-void sendCapturedPhotoMqtt() {
-  if (!cameraReady || !mqtt.connected()) {
-    Serial.println("Kamera atau MQTT belum siap untuk ambil foto");
+void uploadPhotoHttpAndNotify() {
+  if (!cameraReady || WiFi.status() != WL_CONNECTED) {
+    Serial.println("Kamera atau WiFi belum siap untuk upload foto");
     return;
   }
 
@@ -262,47 +265,49 @@ void sendCapturedPhotoMqtt() {
     return;
   }
 
-  size_t b64Len = 0;
-  mbedtls_base64_encode(NULL, 0, &b64Len, fb->buf, fb->len);
-  unsigned char *b64Buf = (unsigned char *)malloc(b64Len + 1);
-  if (!b64Buf) {
-    esp_camera_fb_return(fb);
-    return;
+  WiFiClientSecure uploadClient;
+  uploadClient.setInsecure();
+  HTTPClient http;
+  http.setTimeout(15000);
+
+  String finalUrl = "";
+  String errMsg = "";
+
+  if (http.begin(uploadClient, PHOTO_UPLOAD_URL)) {
+    http.addHeader("Content-Type", "image/jpeg");
+    int httpCode = http.POST(fb->buf, fb->len);
+    if (httpCode > 0 && httpCode < 400) {
+      String resp = http.getString();
+      JsonDocument doc;
+      if (!deserializeJson(doc, resp) && !doc["url"].isNull()) {
+        finalUrl = doc["url"].as<String>();
+      } else {
+        errMsg = "Respons upload tidak memuat URL";
+      }
+    } else {
+      errMsg = "HTTP status " + String(httpCode);
+    }
+    http.end();
+  } else {
+    errMsg = "Gagal terhubung ke server upload";
   }
 
-  if (mbedtls_base64_encode(b64Buf, b64Len + 1, &b64Len, fb->buf, fb->len) != 0) {
-    free(b64Buf);
-    esp_camera_fb_return(fb);
-    return;
-  }
-  b64Buf[b64Len] = '\0';
   esp_camera_fb_return(fb);
 
-  const size_t CHUNK_SIZE = 3072;
-  int totalChunks = (int)((b64Len + CHUNK_SIZE - 1) / CHUNK_SIZE);
-  unsigned long shotId = millis();
-
-  for (int i = 0; i < totalChunks; i++) {
-    size_t startIdx = (size_t)i * CHUNK_SIZE;
-    size_t len = b64Len - startIdx;
-    if (len > CHUNK_SIZE) len = CHUNK_SIZE;
-
-    String partData((const char *)(b64Buf + startIdx), len);
-    JsonDocument pkt;
-    pkt["id"] = shotId;
-    pkt["idx"] = i;
-    pkt["total"] = totalChunks;
-    pkt["data"] = partData;
-
-    String out;
-    serializeJson(pkt, out);
-    mqtt.publish(TOPIC_PHOTO, out.c_str(), false);
-    mqtt.loop();
-    delay(25);
+  if (mqtt.connected()) {
+    JsonDocument outDoc;
+    if (finalUrl.length() > 0) {
+      outDoc["url"] = finalUrl;
+      outDoc["ts"] = millis();
+      Serial.println("Foto resolusi tinggi berhasil diupload");
+    } else {
+      outDoc["error"] = errMsg;
+      Serial.println("Upload foto gagal: " + errMsg);
+    }
+    String outPayload;
+    serializeJson(outDoc, outPayload);
+    mqtt.publish(TOPIC_PHOTO, outPayload.c_str(), false);
   }
-
-  free(b64Buf);
-  Serial.printf("Foto terkirim (%d bagian)\n", totalChunks);
 }
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
@@ -414,7 +419,7 @@ void setup() {
 
   espClient.setInsecure();
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
-  mqtt.setBufferSize(8192);
+  mqtt.setBufferSize(4096);
   mqtt.setCallback(mqttCallback);
   updateOled();
 }
@@ -427,7 +432,7 @@ void loop() {
 
   if (captureRequested) {
     captureRequested = false;
-    sendCapturedPhotoMqtt();
+    uploadPhotoHttpAndNotify();
   }
 
   unsigned long now = millis();
