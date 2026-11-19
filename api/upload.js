@@ -30,19 +30,18 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Empty image payload" });
     }
 
-    const base64 = buffer.toString("base64");
-    const dataUrl = `data:image/jpeg;base64,${base64}`;
+    const tmpFile = path.join("/tmp", "latest_jalak.jpg");
+    fs.writeFileSync(tmpFile, buffer);
 
-    // Simpan salinan sementara di /tmp jika diperlukan
-    const tmpDir = "/tmp";
-    if (fs.existsSync(tmpDir)) {
-      fs.writeFileSync(path.join(tmpDir, "latest_jalak.jpg"), buffer);
-    }
+    const ts = Date.now();
+    const host = req.headers["x-forwarded-host"] || req.headers.host || "smartbrooder-three.vercel.app";
+    const proto = req.headers["x-forwarded-proto"] || "https";
+    const photoUrl = `${proto}://${host}/api/photo?t=${ts}`;
 
     return res.status(200).json({
       ok: true,
       size: buffer.length,
-      url: dataUrl
+      url: photoUrl
     });
   } catch (err) {
     return res.status(500).json({ error: err.message || "Upload failed" });
