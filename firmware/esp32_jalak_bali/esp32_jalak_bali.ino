@@ -356,21 +356,13 @@ bool initCamera() {
   config.pin_sccb_scl = SIOC_GPIO_NUM;
   config.pin_pwdn     = PWDN_GPIO_NUM;
   config.pin_reset    = RESET_GPIO_NUM;
-  config.xclk_freq_hz = 12000000;
+  config.xclk_freq_hz = 10000000;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.fb_location  = CAMERA_FB_IN_PSRAM;
-
-  if (psramFound()) {
-    config.frame_size   = FRAMESIZE_VGA;
-    config.jpeg_quality = 20;
-    config.fb_count     = 2;
-    config.grab_mode    = CAMERA_GRAB_LATEST;
-  } else {
-    config.frame_size   = FRAMESIZE_QVGA;
-    config.jpeg_quality = 22;
-    config.fb_count     = 1;
-    config.grab_mode    = CAMERA_GRAB_WHEN_EMPTY;
-  }
+  config.fb_location  = psramFound() ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
+  config.frame_size   = FRAMESIZE_QVGA;
+  config.jpeg_quality = 18;
+  config.fb_count     = 1;
+  config.grab_mode    = CAMERA_GRAB_WHEN_EMPTY;
 
   return (esp_camera_init(&config) == ESP_OK);
 }
@@ -379,11 +371,6 @@ void sendCapturedPhotoMqtt() {
   if (!cameraReady || !mqtt.connected()) {
     Serial.println("Kamera atau MQTT belum siap untuk ambil foto");
     return;
-  }
-
-  if (psramFound()) {
-    camera_fb_t *stale = esp_camera_fb_get();
-    if (stale) esp_camera_fb_return(stale);
   }
   camera_fb_t *fb = esp_camera_fb_get();
   if (!fb) {
