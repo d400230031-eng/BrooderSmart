@@ -420,7 +420,7 @@ void setup() {
 
   espClient.setInsecure();
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
-  mqtt.setBufferSize(65536);
+  mqtt.setBufferSize(1024);
   mqtt.setCallback(mqttCallback);
   updateOled();
 }

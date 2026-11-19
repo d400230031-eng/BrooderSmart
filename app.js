@@ -90,6 +90,15 @@ function publishJson(topic, obj) {
   client.publish(topic, JSON.stringify(obj), { qos: 1 });
 }
 
+function showPhotoFromServer(cacheBust) {
+  const stamp = cacheBust || Date.now();
+  camPlaceholder.style.display = "none";
+  camImg.style.display = "block";
+  camImg.src = `/api/photo?t=${stamp}`;
+  photoStatusEl.textContent = `Foto diterima jam ${new Date().toLocaleTimeString("id-ID")}`;
+  captureBtn.disabled = false;
+}
+
 function handlePhotoMessage(rawMsg) {
   try {
     const data = JSON.parse(rawMsg);
@@ -98,15 +107,11 @@ function handlePhotoMessage(rawMsg) {
       captureBtn.disabled = false;
       return;
     }
-    if (typeof data.url === "string" && data.url.startsWith("data:image/jpeg;base64,")) {
-      camPlaceholder.style.display = "none";
-      camImg.style.display = "block";
-      camImg.src = data.url;
-      photoStatusEl.textContent = `Foto diterima jam ${new Date().toLocaleTimeString("id-ID")}`;
-      captureBtn.disabled = false;
+    if (data.ok || data.ts || data.url) {
+      showPhotoFromServer(data.ts || Date.now());
       return;
     }
-    photoStatusEl.textContent = "Format URL foto tidak dikenali.";
+    photoStatusEl.textContent = "Notifikasi foto tidak dikenali.";
     captureBtn.disabled = false;
   } catch (err) {
     photoStatusEl.textContent = `Payload foto rusak/terpotong: ${err.message}`;

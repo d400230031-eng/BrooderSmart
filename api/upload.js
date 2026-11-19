@@ -27,13 +27,17 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Empty image payload" });
     }
 
-    const base64 = buffer.toString("base64");
-    const dataUrl = `data:image/jpeg;base64,${base64}`;
+    const ts = Date.now();
+    globalThis.__latestJalakPhoto = {
+      buffer,
+      ts,
+      size: buffer.length
+    };
 
     return res.status(200).json({
       ok: true,
-      size: buffer.length,
-      url: dataUrl
+      ts,
+      size: buffer.length
     });
   } catch (err) {
     return res.status(500).json({ error: err.message || "Upload failed" });
