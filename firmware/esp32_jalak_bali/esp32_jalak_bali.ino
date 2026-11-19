@@ -18,7 +18,6 @@ const char* MQTT_CLIENT_ID = "esp32s3-jalak-bali-01";
 const char* MQTT_USER      = "SmartBrooder";
 const char* MQTT_PASS      = "12345678";
 
-// Ganti ke URL endpoint upload Anda jika berbeda dari deployment Vercel
 const char* PHOTO_UPLOAD_URL = "https://smartbrooder-three.vercel.app/api/upload";
 
 const char* TOPIC_TELEMETRY   = "SmartBrooder/jalak/telemetry";
@@ -240,12 +239,12 @@ bool initCamera() {
 
   if (psramFound()) {
     config.frame_size   = FRAMESIZE_VGA;
-    config.jpeg_quality = 14;
+    config.jpeg_quality = 16;
     config.fb_count     = 1;
     config.grab_mode    = CAMERA_GRAB_LATEST;
   } else {
-    config.frame_size   = FRAMESIZE_VGA;
-    config.jpeg_quality = 14;
+    config.frame_size   = FRAMESIZE_QVGA;
+    config.jpeg_quality = 20;
     config.fb_count     = 1;
     config.grab_mode    = CAMERA_GRAB_WHEN_EMPTY;
   }
@@ -265,49 +264,60 @@ void uploadPhotoHttpAndNotify() {
     return;
   }
 
-  WiFiClientSecure uploadClient;
-  uploadClient.setInsecure();
-  HTTPClient http;
-  http.setTimeout(15000);
+  Serial.printf("Mengambil frame JPEG (%u bytes)...\n", (unsigned int)fb->len);
 
-  String finalUrl = "";
+  WiFiClientSecure uploadClient;
+  HTTPClient http;
+
+  bool uploadOk = false;
+  long photoTs = 0;
   String errMsg = "";
 
-  if (http.begin(uploadClient, PHOTO_UPLOAD_URL)) {
-    http.addHeader("Content-Type", "image/jpeg");
-    int httpCode = http.POST(fb->buf, fb->len);
-    if (httpCode > 0 && httpCode < 400) {
-      String resp = http.getString();
-      JsonDocument doc;
-      if (!deserializeJson(doc, resp) && !doc["url"].isNull()) {
-        finalUrl = doc["url"].as<String>();
-      } else {
-        errMsg = "Respons upload tidak memuat URL";
+  for (int attempt = 0; attempt < 2; attempt++) {
+    uploadClient.stop();
+    uploadClient.setInsecure();
+    if (http.begin(uploadClient, PHOTO_UPLOAD_URL)) {
+      http.setTimeout(20000);
+      http.addHeader("Content-Type", "image/jpeg");
+      http.addHeader("Connection", "close");
+      int httpCode = http.POST(fb->buf, fb->len);
+      if (httpCode > 0 && httpCode < 400) {
+        String resp = http.getString();
+        JsonDocument doc;
+        if (!deserializeJson(doc, resp) && (doc["ok"] == true || !doc["ts"].isNull() || !doc["url"].isNull())) {
+          uploadOk = true;
+          photoTs = doc["ts"] | (long)millis();
+        } else {
+          errMsg = "Respons upload tidak valid: " + resp;
+        }
+        http.end();
+        break;
       }
-    } else {
       errMsg = "HTTP status " + String(httpCode);
+      http.end();
+    } else {
+      errMsg = "Gagal terhubung ke server upload";
     }
-    http.end();
-  } else {
-    errMsg = "Gagal terhubung ke server upload";
+    delay(300);
   }
 
   esp_camera_fb_return(fb);
 
   if (mqtt.connected()) {
     JsonDocument outDoc;
-    if (finalUrl.length() > 0) {
-      outDoc["url"] = finalUrl;
-      outDoc["ts"] = millis();
-      Serial.println("Foto resolusi tinggi berhasil diupload");
+    if (uploadOk) {
+      outDoc["ok"] = true;
+      outDoc["ts"] = photoTs;
+      Serial.println("Foto berhasil diupload ke server");
     } else {
       outDoc["error"] = errMsg;
       Serial.println("Upload foto gagal: " + errMsg);
     }
-    String outPayload;
-    serializeJson(outDoc, outPayload);
-    mqtt.publish(TOPIC_PHOTO, outPayload.c_str(), false);
+    char outPayload[192];
+    serializeJson(outDoc, outPayload, sizeof(outPayload));
+    bool pubOk = mqtt.publish(TOPIC_PHOTO, outPayload, false);
     mqtt.loop();
+    Serial.printf("Publish notifikasi MQTT %s\n", pubOk ? "OK" : "GAGAL");
   }
 }
 
