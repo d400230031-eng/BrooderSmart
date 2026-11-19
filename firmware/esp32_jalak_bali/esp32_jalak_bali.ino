@@ -1,5 +1,8 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <WebServer.h>
+#include <DNSServer.h>
+#include <Preferences.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <DHT.h>
@@ -9,8 +12,10 @@
 #include "esp_camera.h"
 #include "mbedtls/base64.h"
 
-const char* WIFI_SSID = "Aryo Sidiq";
-const char* WIFI_PASS = "cukitooo";
+const char* DEFAULT_WIFI_SSID = "Aryo Sidiq";
+const char* DEFAULT_WIFI_PASS = "cukitooo";
+const char* AP_SSID           = "BrooderJalak-Setup";
+const char* AP_PASS           = "12345678";
 
 const char* MQTT_HOST      = "w13913d1.ala.us-east-1.emqxsl.com";
 const int   MQTT_PORT      = 8883;
@@ -82,12 +87,106 @@ unsigned long lastDhtReadMs = 0;
 unsigned long lastPubMs = 0;
 unsigned long lastOledMs = 0;
 unsigned long lastWifiCheckMs = 0;
+unsigned long wifiConnectStartMs = 0;
 bool cameraReady = false;
 bool oledReady = false;
+bool portalActive = false;
 volatile bool captureRequested = false;
 
+String currentWifiSsid = "";
+String currentWifiPass = "";
+
+Preferences prefs;
+WebServer webServer(80);
+DNSServer dnsServer;
 WiFiClientSecure espClient;
 PubSubClient mqtt(espClient);
+
+String htmlEscape(const String& in) {
+  String out = in;
+  out.replace("&", "&amp;");
+  out.replace("<", "&lt;");
+  out.replace(">", "&gt;");
+  out.replace("\"", "&quot;");
+  return out;
+}
+
+String buildSetupHtml(const String& notice = "") {
+  String ipStr = (WiFi.status() == WL_CONNECTED) ? WiFi.localIP().toString() : WiFi.softAPIP().toString();
+  String statusStr = (WiFi.status() == WL_CONNECTED)
+    ? ("Terhubung ke " + htmlEscape(WiFi.SSID()) + " (" + ipStr + ")")
+    : ("Mode Setup AP: " + String(AP_SSID) + " (" + ipStr + ")");
+
+  String html = "<!DOCTYPE html><html lang='id'><head><meta charset='UTF-8'>";
+  html += "<meta name='viewport' content='width=device-width,initial-scale=1.0'>";
+  html += "<title>Pengaturan WiFi BrooderSmart</title>";
+  html += "<style>body{font-family:system-ui,sans-serif;background:#0f172a;color:#f8fafc;padding:20px;margin:0}";
+  html += ".box{max-width:440px;margin:0 auto;background:#1e293b;border:1px solid #334155;border-radius:14px;padding:20px}";
+  html += "h2{margin:0 0 8px;font-size:1.2rem;color:#38bdf8}.sub{font-size:.85rem;color:#94a3b8;margin-bottom:16px}";
+  html += "label{display:block;font-size:.82rem;color:#cbd5e1;margin:12px 0 4px}";
+  html += "input{width:100%;box-sizing:border-box;padding:10px 12px;border-radius:10px;border:1px solid #475569;background:#0f172a;color:#f8fafc;font-size:.95rem}";
+  html += "button{width:100%;margin-top:16px;padding:11px;border:0;border-radius:10px;background:#38bdf8;color:#0f172a;font-weight:700;font-size:.95rem;cursor:pointer}";
+  html += ".msg{background:rgba(34,197,94,.15);border:1px solid #22c55e;color:#bbf7d0;padding:10px;border-radius:10px;margin-bottom:14px;font-size:.85rem}</style></head><body><div class='box'>";
+  html += "<h2>Pengaturan WiFi ESP32-S3</h2>";
+  html += "<div class='sub'>Status: " + statusStr + "</div>";
+  if (notice.length() > 0) {
+    html += "<div class='msg'>" + htmlEscape(notice) + "</div>";
+  }
+  html += "<form method='POST' action='/save'>";
+  html += "<label for='ssid'>Nama WiFi (SSID)</label>";
+  html += "<input id='ssid' name='ssid' type='text' required value='" + htmlEscape(currentWifiSsid) + "' placeholder='Contoh: Aryo Sidiq'>";
+  html += "<label for='pass'>Password WiFi</label>";
+  html += "<input id='pass' name='pass' type='password' value='" + htmlEscape(currentWifiPass) + "' placeholder='Kosongkan jika open WiFi'>";
+  html += "<button type='submit'>Simpan &amp; Hubungkan</button></form></div></body></html>";
+  return html;
+}
+
+void startSetupPortal() {
+  if (portalActive) return;
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.softAP(AP_SSID, AP_PASS);
+  dnsServer.start(53, "*", WiFi.softAPIP());
+  portalActive = true;
+  Serial.print("Setup WiFi AP aktif: ");
+  Serial.print(AP_SSID);
+  Serial.print(" -> http://");
+  Serial.println(WiFi.softAPIP());
+}
+
+void setupWebRoutes() {
+  webServer.on("/", HTTP_GET, []() {
+    webServer.send(200, "text/html", buildSetupHtml());
+  });
+  webServer.on("/save", HTTP_POST, []() {
+    String newSsid = webServer.arg("ssid");
+    String newPass = webServer.arg("pass");
+    newSsid.trim();
+    if (newSsid.length() == 0) {
+      webServer.send(400, "text/html", buildSetupHtml("SSID tidak boleh kosong."));
+      return;
+    }
+    currentWifiSsid = newSsid;
+    currentWifiPass = newPass;
+    prefs.begin("brooder_wifi", false);
+    prefs.putString("ssid", currentWifiSsid);
+    prefs.putString("pass", currentWifiPass);
+    prefs.end();
+
+    webServer.send(200, "text/html", buildSetupHtml("Tersimpan! ESP32-S3 sedang menghubungkan ke " + newSsid + "..."));
+    delay(200);
+    WiFi.disconnect();
+    wifiConnectStartMs = millis();
+    WiFi.begin(currentWifiSsid.c_str(), currentWifiPass.c_str());
+  });
+  webServer.onNotFound([]() {
+    if (WiFi.status() != WL_CONNECTED) {
+      webServer.send(200, "text/html", buildSetupHtml());
+    } else {
+      webServer.send(404, "text/plain", "Not found");
+    }
+  });
+  webServer.begin();
+}
 
 void writeRelayPin(int idx, bool on) {
   if (idx < 0 || idx > 3) return;
@@ -130,7 +229,7 @@ void updateOled() {
     display.print("R:+H L:-L SW:OK");
   } else {
     display.printf("W:%s M:%s C:%s",
-                 WiFi.status() == WL_CONNECTED ? "OK" : "--",
+                 WiFi.status() == WL_CONNECTED ? "OK" : (portalActive ? "AP" : "--"),
                  mqtt.connected() ? "OK" : "--",
                  cameraReady ? "OK" : "ERR");
   }
@@ -353,12 +452,26 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 }
 
 void ensureWiFi() {
-  if (WiFi.status() == WL_CONNECTED) return;
+  if (WiFi.status() == WL_CONNECTED) {
+    static bool printedIp = false;
+    if (!printedIp) {
+      Serial.print("WiFi terhubung ke ");
+      Serial.print(WiFi.SSID());
+      Serial.print(" | IP Web Setup: http://");
+      Serial.println(WiFi.localIP());
+      printedIp = true;
+    }
+    return;
+  }
+
+  if (millis() - wifiConnectStartMs >= 10000) {
+    startSetupPortal();
+  }
+
   unsigned long now = millis();
-  if (now - lastWifiCheckMs < 5000) return;
+  if (now - lastWifiCheckMs < 7000) return;
   lastWifiCheckMs = now;
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  WiFi.begin(currentWifiSsid.c_str(), currentWifiPass.c_str());
 }
 
 void ensureMqtt() {
@@ -411,8 +524,15 @@ void setup() {
     Serial.println("OLED SSD1306 gagal diinisialisasi");
   }
 
+  prefs.begin("brooder_wifi", true);
+  currentWifiSsid = prefs.getString("ssid", DEFAULT_WIFI_SSID);
+  currentWifiPass = prefs.getString("pass", DEFAULT_WIFI_PASS);
+  prefs.end();
+
   WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  wifiConnectStartMs = millis();
+  WiFi.begin(currentWifiSsid.c_str(), currentWifiPass.c_str());
+  setupWebRoutes();
 
   espClient.setInsecure();
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
@@ -422,6 +542,11 @@ void setup() {
 }
 
 void loop() {
+  if (portalActive) {
+    dnsServer.processNextRequest();
+  }
+  webServer.handleClient();
+
   ensureWiFi();
   ensureMqtt();
   mqtt.loop();
