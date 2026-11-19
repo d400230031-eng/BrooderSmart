@@ -259,3 +259,26 @@ renderRelays();
 connectMqtt();
 updateEspHealth();
 setInterval(updateEspHealth, 2000);
+const setupUrlInput = document.getElementById("esp-setup-url");
+const loadSetupBtn = document.getElementById("load-setup-frame");
+const openSetupTab = document.getElementById("open-setup-tab");
+const setupFrame = document.getElementById("esp-setup-frame");
+
+if (setupUrlInput && loadSetupBtn && openSetupTab && setupFrame) {
+  const savedSetupUrl = (localStorage.getItem("esp_setup_url") || "http://192.168.4.1").trim();
+  setupUrlInput.value = savedSetupUrl;
+  setupFrame.src = savedSetupUrl;
+  openSetupTab.href = savedSetupUrl;
+
+  loadSetupBtn.onclick = () => {
+    let targetUrl = setupUrlInput.value.trim();
+    if (!targetUrl) targetUrl = "http://192.168.4.1";
+    if (!/^https?:\/\//i.test(targetUrl)) {
+      targetUrl = "http://" + targetUrl;
+    }
+    setupUrlInput.value = targetUrl;
+    localStorage.setItem("esp_setup_url", targetUrl);
+    setupFrame.src = targetUrl;
+    openSetupTab.href = targetUrl;
+  };
+}

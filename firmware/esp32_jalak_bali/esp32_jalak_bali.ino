@@ -12,8 +12,8 @@
 #include "esp_camera.h"
 #include "mbedtls/base64.h"
 
-const char* DEFAULT_WIFI_SSID = "Aryo Sidiq";
-const char* DEFAULT_WIFI_PASS = "cukitooo";
+const char* DEFAULT_WIFI_SSID = "aldi";
+const char* DEFAULT_WIFI_PASS = "12345678";
 const char* AP_SSID           = "BrooderJalak-Setup";
 const char* AP_PASS           = "12345678";
 

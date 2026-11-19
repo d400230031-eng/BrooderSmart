@@ -134,6 +134,22 @@
       </div>
     </div>
   </div>
+    <div class="card">
+      <h2>Portal Pengaturan WiFi ESP32-S3 (http://192.168.4.1)</h2>
+      <div class="sub">Pastikan perangkat terhubung ke WiFi AP ESP32-S3 (default: 192.168.4.1) atau masukkan IP lokal ESP32-S3.</div>
+      <div class="controls-row">
+        <div class="input-group">
+          <label for="esp-setup-url">URL Setup WiFi ESP32-S3</label>
+          <input type="text" id="esp-setup-url" value="http://192.168.4.1" />
+        </div>
+        <button class="action" id="load-setup-frame">Tampilkan di Web</button>
+        <a class="secondary" id="open-setup-tab" href="http://192.168.4.1" target="_blank" rel="noopener noreferrer" style="text-decoration:none;display:inline-flex;align-items:center;">Buka Tab Baru</a>
+      </div>
+      <div class="cam-box" style="aspect-ratio:auto;min-height:340px;background:#0f172a;">
+        <iframe id="esp-setup-frame" src="http://192.168.4.1" title="Setup WiFi ESP32-S3" style="width:100%;height:340px;border:0;background:#0f172a;"></iframe>
+      </div>
+    </div>
+
 
   <script src="app.js"></script>
 </body>
