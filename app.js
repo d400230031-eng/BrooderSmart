@@ -95,8 +95,14 @@ function handlePhotoMessage(rawMsg) {
       camPlaceholder.style.display = "none";
       photoStatusEl.textContent = `Foto diterima jam ${new Date().toLocaleTimeString("id-ID")}`;
       captureBtn.disabled = false;
+      return;
     }
-  } catch (_) {}
+    photoStatusEl.textContent = "Respons foto tidak memuat URL.";
+    captureBtn.disabled = false;
+  } catch (err) {
+    photoStatusEl.textContent = `Payload foto rusak/terpotong: ${err.message}`;
+    captureBtn.disabled = false;
+  }
 }
 
 function connectMqtt() {
@@ -147,8 +153,8 @@ function connectMqtt() {
       const tempValid = typeof data.temp === "number" && !Number.isNaN(data.temp);
       const humValid = typeof data.hum === "number" && !Number.isNaN(data.hum);
 
-      tempEl.textContent = tempValid ? `${data.temp.toFixed(1)} °C` : "--.- °C";
-      humEl.textContent = `Kelembapan: ${humValid ? `${data.hum.toFixed(1)}%` : "--%"} | Min: ${data.minTemp ?? "--"}°C | Max: ${data.maxTemp ?? "--"}°C`;
+      tempEl.textContent = tempValid ? `${data.temp.toFixed(1)} Â°C` : "--.- Â°C";
+      humEl.textContent = `Kelembapan: ${humValid ? `${data.hum.toFixed(1)}%` : "--%"} | Min: ${data.minTemp ?? "--"}Â°C | Max: ${data.maxTemp ?? "--"}Â°C`;
       sensorAlertEl.style.display = (!tempValid || !humValid) ? "block" : "none";
 
       if (typeof data.auto === "boolean") {

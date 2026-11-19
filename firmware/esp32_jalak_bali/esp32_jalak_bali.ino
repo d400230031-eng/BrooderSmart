@@ -239,8 +239,8 @@ bool initCamera() {
   config.pixel_format = PIXFORMAT_JPEG;
 
   if (psramFound()) {
-    config.frame_size   = FRAMESIZE_UXGA;
-    config.jpeg_quality = 10;
+    config.frame_size   = FRAMESIZE_VGA;
+    config.jpeg_quality = 14;
     config.fb_count     = 1;
     config.grab_mode    = CAMERA_GRAB_LATEST;
   } else {
@@ -307,6 +307,7 @@ void uploadPhotoHttpAndNotify() {
     String outPayload;
     serializeJson(outDoc, outPayload);
     mqtt.publish(TOPIC_PHOTO, outPayload.c_str(), false);
+    mqtt.loop();
   }
 }
 
@@ -419,7 +420,7 @@ void setup() {
 
   espClient.setInsecure();
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
-  mqtt.setBufferSize(4096);
+  mqtt.setBufferSize(65536);
   mqtt.setCallback(mqttCallback);
   updateOled();
 }
