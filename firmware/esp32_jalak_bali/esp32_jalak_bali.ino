@@ -109,37 +109,46 @@ void updateOled() {
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
-  display.setCursor(0, 0);
+  // Baris 1 (y = 2): Mode/Menu & Suhu (maks ~21 karakter)
+  display.setCursor(0, 2);
   if (encMenuState == ENC_SET_MAX) {
-    display.printf("Atas(Max): %.1fC", maxTemp);
+    display.printf("SET ATAS : %.1fC", maxTemp);
   } else if (encMenuState == ENC_SET_MIN) {
-    display.printf("Bawah(Min): %.1fC", minTemp);
+    display.printf("SET BAWAH: %.1fC", minTemp);
   } else if (isnan(cachedTemp)) {
-    display.printf("%s Suhu: --.-C", autoMode ? "AUTO" : "MAN");
+    display.printf("%s Suhu:--.-C", autoMode ? "OTOMATIS" : "MANUAL");
   } else {
-    display.printf("%s Suhu: %.1fC", autoMode ? "AUTO" : "MAN", cachedTemp);
+    display.printf("%s Suhu:%.1fC", autoMode ? "OTOMATIS" : "MANUAL", cachedTemp);
   }
 
-  display.setCursor(0, 11);
-  if (isnan(cachedHum)) {
-    display.printf("RH:--%% Min:%.1f Max:%.1f", minTemp, maxTemp);
-  } else {
-    display.printf("RH:%.0f%% Min:%.1f Max:%.1f", cachedHum, minTemp, maxTemp);
-  }
-
-  display.setCursor(0, 22);
+  // Baris 2 (y = 18): Lembap, Relay & Status WiFi/MQTT (maks ~21 karakter)
+  display.setCursor(0, 18);
   if (encMenuState == ENC_SET_MAX) {
-    display.print("Putar:+/- Tekan:Min");
+    display.print("Putar:+/- Tekan:Bawah");
   } else if (encMenuState == ENC_SET_MIN) {
     display.print("Putar:+/- Tekan:OK");
   } else {
-    display.printf("Rly:%d%d%d%d WiFi:%s MQ:%s",
-                   relayState[0] ? 1 : 0,
-                   relayState[1] ? 1 : 0,
-                   relayState[2] ? 1 : 0,
-                   relayState[3] ? 1 : 0,
-                   WiFi.status() == WL_CONNECTED ? "OK" : "NO",
-                   mqtt.connected() ? "OK" : "NO");
+    bool wifiOk = (WiFi.status() == WL_CONNECTED);
+    bool mqttOk = mqtt.connected();
+    char rlyStr[5];
+    snprintf(rlyStr, sizeof(rlyStr), "%d%d%d%d",
+             relayState[0] ? 1 : 0,
+             relayState[1] ? 1 : 0,
+             relayState[2] ? 1 : 0,
+             relayState[3] ? 1 : 0);
+
+    if (isnan(cachedHum)) {
+      display.printf("R:%s W:%s M:%s",
+                     rlyStr,
+                     wifiOk ? "YA" : "TDK",
+                     mqttOk ? "YA" : "TDK");
+    } else {
+      display.printf("L:%.0f%% R:%s W:%s M:%s",
+                     cachedHum,
+                     rlyStr,
+                     wifiOk ? "YA" : "TDK",
+                     mqttOk ? "YA" : "TDK");
+    }
   }
 
   display.display();
