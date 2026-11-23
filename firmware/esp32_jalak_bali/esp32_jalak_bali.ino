@@ -108,36 +108,38 @@ void updateOled() {
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 0);
 
+  display.setCursor(0, 0);
   if (encMenuState == ENC_SET_MAX) {
-    display.printf("SET ATAS(H):%.1f\n", maxTemp);
+    display.printf("Atas(Max): %.1fC", maxTemp);
   } else if (encMenuState == ENC_SET_MIN) {
-    display.printf("SET BAWAH(L):%.1f\n", minTemp);
-  } else if (isnan(cachedTemp) || isnan(cachedHum)) {
-    display.printf("%s T:--.-C H:--%%\n", autoMode ? "AUTO" : "MAN");
+    display.printf("Bawah(Min): %.1fC", minTemp);
+  } else if (isnan(cachedTemp)) {
+    display.printf("%s Suhu: --.-C", autoMode ? "AUTO" : "MAN");
   } else {
-    display.printf("%s T:%.1fC H:%.0f%%\n", autoMode ? "AUTO" : "MAN", cachedTemp, cachedHum);
+    display.printf("%s Suhu: %.1fC", autoMode ? "AUTO" : "MAN", cachedTemp);
   }
 
-  display.setCursor(0, 12);
-  display.printf("L:%.1f H:%.1f R:%d%d%d%d\n",
-                 minTemp, maxTemp,
-                 relayState[0] ? 1 : 0,
-                 relayState[1] ? 1 : 0,
-                 relayState[2] ? 1 : 0,
-                 relayState[3] ? 1 : 0);
-
-  display.setCursor(0, 24);
-  if (encMenuState == ENC_SET_MAX) {
-    display.print("R:+H L:-H SW:NEXT");
-  } else if (encMenuState == ENC_SET_MIN) {
-    display.print("R:+L L:-L SW:OK");
+  display.setCursor(0, 11);
+  if (isnan(cachedHum)) {
+    display.printf("RH:--%% Min:%.1f Max:%.1f", minTemp, maxTemp);
   } else {
-    display.printf("W:%s M:%s C:%s",
-                 WiFi.status() == WL_CONNECTED ? "OK" : "--",
-                 mqtt.connected() ? "OK" : "--",
-                 cameraReady ? "OK" : "ERR");
+    display.printf("RH:%.0f%% Min:%.1f Max:%.1f", cachedHum, minTemp, maxTemp);
+  }
+
+  display.setCursor(0, 22);
+  if (encMenuState == ENC_SET_MAX) {
+    display.print("Putar:+/- Tekan:Min");
+  } else if (encMenuState == ENC_SET_MIN) {
+    display.print("Putar:+/- Tekan:OK");
+  } else {
+    display.printf("Rly:%d%d%d%d WiFi:%s MQ:%s",
+                   relayState[0] ? 1 : 0,
+                   relayState[1] ? 1 : 0,
+                   relayState[2] ? 1 : 0,
+                   relayState[3] ? 1 : 0,
+                   WiFi.status() == WL_CONNECTED ? "OK" : "NO",
+                   mqtt.connected() ? "OK" : "NO");
   }
 
   display.display();
