@@ -103,76 +103,17 @@ void setAllRelaysOff() {
   }
 }
 
-void playBootAnimation() {
-  if (!oledReady) return;
-  for (int step = 0; step < 6; step++) {
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
-
-    int birdX = 10 + step * 14;
-    int wingY = (step % 2 == 0) ? 4 : 8;
-    // Ikon burung sederhana mengepakkan sayap
-    display.drawLine(birdX - 6, wingY, birdX, 6, SSD1306_WHITE);
-    display.drawLine(birdX, 6, birdX + 6, wingY, SSD1306_WHITE);
-    display.fillCircle(birdX + 7, 5, 1, SSD1306_WHITE);
-
-    display.setCursor(16, 18);
-    display.print("Smart Brooder Jalak");
-    display.display();
-    delay(220);
-  }
-}
-
-void drawStatusAnimIcon(int frame) {
-  bool anyHeat = relayState[0] || relayState[1];
-  bool anyFan  = relayState[2] || relayState[3];
-  bool wifiOk  = (WiFi.status() == WL_CONNECTED);
-
-  int cx = 116;
-  int cy = 22;
-
-  if (anyFan) {
-    // Bilah kipas berputar 2 fase
-    if (frame % 2 == 0) {
-      display.drawLine(cx - 5, cy - 5, cx + 5, cy + 5, SSD1306_WHITE);
-      display.drawLine(cx - 5, cy + 5, cx + 5, cy - 5, SSD1306_WHITE);
-    } else {
-      display.drawLine(cx, cy - 6, cx, cy + 6, SSD1306_WHITE);
-      display.drawLine(cx - 6, cy, cx + 6, cy, SSD1306_WHITE);
-    }
-    display.drawCircle(cx, cy, 2, SSD1306_WHITE);
-  } else if (anyHeat) {
-    // Gelombang panas naik
-    int shift = frame % 3;
-    display.drawFastVLine(cx - 3, cy - 4 + shift, 5, SSD1306_WHITE);
-    display.drawFastVLine(cx + 1, cy - 6 + shift, 6, SSD1306_WHITE);
-    display.drawFastVLine(cx + 5, cy - 3 + shift, 5, SSD1306_WHITE);
-  } else if (wifiOk) {
-    // Indikator denyut koneksi aktif
-    int r = 2 + (frame % 3);
-    display.drawCircle(cx, cy, r, SSD1306_WHITE);
-  } else {
-    // Tanda silang kecil saat WiFi belum terhubung
-    display.drawLine(cx - 3, cy - 3, cx + 3, cy + 3, SSD1306_WHITE);
-    display.drawLine(cx - 3, cy + 3, cx + 3, cy - 3, SSD1306_WHITE);
-  }
-}
-
 void updateOled() {
   if (!oledReady) return;
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
-  int animFrame = (int)(millis() / 350);
-
   if (encMenuState == ENC_SET_MAX) {
     display.setCursor(0, 2);
     display.printf("Atas: %.1f C", maxTemp);
     display.setCursor(0, 18);
     display.print("Putar:+/- Tekan:Bawah");
-    drawStatusAnimIcon(animFrame);
     display.display();
     return;
   }
@@ -182,7 +123,6 @@ void updateOled() {
     display.printf("Bawah: %.1f C", minTemp);
     display.setCursor(0, 18);
     display.print("Putar:+/- Tekan:OK");
-    drawStatusAnimIcon(animFrame);
     display.display();
     return;
   }
@@ -192,7 +132,6 @@ void updateOled() {
   bool wifiOk = (WiFi.status() == WL_CONNECTED);
 
   if (page == 0) {
-    // Urut ke bawah: Mode lalu Suhu
     display.setCursor(0, 2);
     display.printf("Mode: %s", modeLabel);
 
@@ -203,7 +142,6 @@ void updateOled() {
       display.printf("Suhu: %.1f C", cachedTemp);
     }
   } else if (page == 1) {
-    // Urut ke bawah: Kelembapan lalu Status WiFi
     display.setCursor(0, 2);
     if (isnan(cachedHum)) {
       display.print("Lembap: -- %");
@@ -214,7 +152,6 @@ void updateOled() {
     display.setCursor(0, 18);
     display.printf("WiFi: %s", wifiOk ? "TERHUBUNG" : "BELUM");
   } else {
-    // Urut ke bawah: Suhu Atas lalu Suhu Bawah (Celsius)
     display.setCursor(0, 2);
     display.printf("Atas: %.1f C", maxTemp);
 
@@ -222,7 +159,6 @@ void updateOled() {
     display.printf("Bawah: %.1f C", minTemp);
   }
 
-  drawStatusAnimIcon(animFrame);
   display.display();
 }
 
@@ -502,7 +438,10 @@ void setup() {
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
     display.setCursor(0, 4);
-    playBootAnimation();
+    display.println("Brooder Jalak Bali");
+    display.setCursor(0, 18);
+    display.println("Siap Digunakan");
+    display.display();
   } else {
     Serial.println("OLED SSD1306 gagal diinisialisasi");
   }
