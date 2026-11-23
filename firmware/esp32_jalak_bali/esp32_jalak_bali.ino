@@ -1,5 +1,6 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <Preferences.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <DHT.h>
@@ -88,6 +89,7 @@ bool oledReady = false;
 volatile bool captureRequested = false;
 
 WiFiClientSecure espClient;
+Preferences limitPrefs;
 PubSubClient mqtt(espClient);
 
 void writeRelayPin(int idx, bool on) {
@@ -101,6 +103,28 @@ void setAllRelaysOff() {
   for (int i = 0; i < 4; i++) {
     writeRelayPin(i, false);
   }
+}
+
+void loadSavedTempLimits() {
+  limitPrefs.begin("brooder_limits", true);
+  float savedMin = limitPrefs.getFloat("minTemp", 32.5f);
+  float savedMax = limitPrefs.getFloat("maxTemp", 33.5f);
+  limitPrefs.end();
+
+  if (!isnan(savedMin) && !isnan(savedMax) && savedMin < savedMax && savedMin >= 0.0f && savedMax <= 60.0f) {
+    minTemp = roundf(savedMin * 10.0f) / 10.0f;
+    maxTemp = roundf(savedMax * 10.0f) / 10.0f;
+  } else {
+    minTemp = 32.5f;
+    maxTemp = 33.5f;
+  }
+}
+
+void saveTempLimits() {
+  limitPrefs.begin("brooder_limits", false);
+  limitPrefs.putFloat("minTemp", minTemp);
+  limitPrefs.putFloat("maxTemp", maxTemp);
+  limitPrefs.end();
 }
 
 void updateOled() {
@@ -216,6 +240,7 @@ void handleRotaryEncoder() {
     } else {
       encMenuState = ENC_IDLE;
       autoMode = true;
+      saveTempLimits();
       applyAutoControl();
       publishTelemetry();
     }
@@ -371,12 +396,14 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   } else if (t == TOPIC_CMD_MODE) {
     autoMode = doc["auto"] | true;
     if (autoMode) encMenuState = ENC_IDLE;
-    if (autoMode) applyAutoControl();
+    if (autoMode)
+      saveTempLimits(); applyAutoControl();
     publishTelemetry();
   } else if (t == TOPIC_CMD_LIMITS) {
     if (!doc["min"].isNull()) minTemp = doc["min"].as<float>();
     if (!doc["max"].isNull()) maxTemp = doc["max"].as<float>();
-    if (autoMode) applyAutoControl();
+    if (autoMode)
+      saveTempLimits(); applyAutoControl();
     publishTelemetry();
   } else if (t == TOPIC_CMD_OFF) {
     autoMode = false;
@@ -415,6 +442,7 @@ void ensureMqtt() {
 
 void setup() {
   Serial.begin(115200);
+  loadSavedTempLimits();
   dht.begin();
 
   pinMode(ENC_CLK, INPUT_PULLUP);
