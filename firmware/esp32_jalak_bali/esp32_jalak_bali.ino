@@ -71,7 +71,8 @@ bool autoMode = true;
 float minTemp = 32.5;
 float maxTemp = 33.5;
 
-enum EncMenuState { ENC_IDLE = 0, ENC_SET_MAX = 1, ENC_SET_MIN = 2 };`nEncMenuState encMenuState = ENC_IDLE;
+enum EncMenuState { ENC_IDLE = 0, ENC_SET_MAX = 1, ENC_SET_MIN = 2 };
+EncMenuState encMenuState = ENC_IDLE;
 int lastEncClk = HIGH;
 int lastEncSw = HIGH;
 unsigned long lastSwMs = 0;
