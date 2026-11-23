@@ -195,6 +195,83 @@ header {
       .card { padding: 14px; border-radius: 14px; }
       .controls-row button.action, .controls-row button.secondary { flex: 1 1 auto; text-align: center; }
     }
+    @keyframes fadeSlideUp {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes pulseBadge {
+      0%, 100% {
+        box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.25);
+      }
+      50% {
+        box-shadow: 0 0 0 6px rgba(56, 189, 248, 0);
+      }
+    }
+
+    @keyframes pulseOk {
+      0%, 100% {
+        box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.32);
+      }
+      50% {
+        box-shadow: 0 0 0 7px rgba(34, 197, 94, 0);
+      }
+    }
+
+    @keyframes floatWatermark {
+      0%, 100% {
+        transform: translateY(0px) scale(1);
+      }
+      50% {
+        transform: translateY(-8px) scale(1.015);
+      }
+    }
+
+    body::before {
+      animation: floatWatermark 12s ease-in-out infinite;
+      will-change: transform;
+    }
+
+    header, .card {
+      animation: fadeSlideUp 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+
+    .grid .card:nth-child(2) {
+      animation-delay: 0.08s;
+    }
+
+    .container > .card:nth-of-type(2) {
+      animation-delay: 0.14s;
+    }
+
+    .container > .card:nth-of-type(3) {
+      animation-delay: 0.2s;
+    }
+
+    .badge {
+      animation: pulseBadge 2.8s ease-in-out infinite;
+    }
+
+    .badge.ok {
+      animation: pulseOk 2.6s ease-in-out infinite;
+    }
+
+    .relay-btn.on {
+      animation: pulseOk 2.8s ease-in-out infinite;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      body::before, header, .card, .badge, .badge.ok, .relay-btn.on {
+        animation: none !important;
+        transition: none !important;
+      }
+    }
   </style>
 </head>
 <body>
