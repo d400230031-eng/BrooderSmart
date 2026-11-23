@@ -111,7 +111,7 @@ void updateOled() {
 
   if (encMenuState == ENC_SET_MAX) {
     display.setCursor(0, 2);
-    display.printf("SET ATAS : %.1fC", maxTemp);
+    display.printf("Atas: %.1f C", maxTemp);
     display.setCursor(0, 18);
     display.print("Putar:+/- Tekan:Bawah");
     display.display();
@@ -120,39 +120,46 @@ void updateOled() {
 
   if (encMenuState == ENC_SET_MIN) {
     display.setCursor(0, 2);
-    display.printf("SET BAWAH: %.1fC", minTemp);
+    display.printf("Bawah: %.1f C", minTemp);
     display.setCursor(0, 18);
     display.print("Putar:+/- Tekan:OK");
     display.display();
     return;
   }
 
-  bool showPageTwo = ((millis() / 3000) % 2) == 1;
+  int page = (millis() / 3000) % 3;
   const char* modeLabel = autoMode ? "OTOMATIS" : "MANUAL";
   bool wifiOk = (WiFi.status() == WL_CONNECTED);
 
-  if (!showPageTwo) {
-    // Halaman 1: Mode, Suhu, Kelembapan
+  if (page == 0) {
+    // Urut ke bawah: Mode lalu Suhu
     display.setCursor(0, 2);
-    if (isnan(cachedTemp)) {
-      display.printf("Mode:%s S:--.-C", modeLabel);
-    } else {
-      display.printf("Mode:%s S:%.1fC", modeLabel, cachedTemp);
-    }
+    display.printf("Mode: %s", modeLabel);
 
     display.setCursor(0, 18);
-    if (isnan(cachedHum)) {
-      display.print("Lembap: --%");
+    if (isnan(cachedTemp)) {
+      display.print("Suhu: --.- C");
     } else {
-      display.printf("Lembap: %.0f%%", cachedHum);
+      display.printf("Suhu: %.1f C", cachedTemp);
     }
-  } else {
-    // Halaman 2: Suhu Atas, Suhu Bawah, Status WiFi
+  } else if (page == 1) {
+    // Urut ke bawah: Kelembapan lalu Status WiFi
     display.setCursor(0, 2);
-    display.printf("Atas:%.1fC Bawah:%.1fC", maxTemp, minTemp);
+    if (isnan(cachedHum)) {
+      display.print("Lembap: -- %");
+    } else {
+      display.printf("Lembap: %.0f %%", cachedHum);
+    }
 
     display.setCursor(0, 18);
     display.printf("WiFi: %s", wifiOk ? "TERHUBUNG" : "BELUM");
+  } else {
+    // Urut ke bawah: Suhu Atas lalu Suhu Bawah (Celsius)
+    display.setCursor(0, 2);
+    display.printf("Atas: %.1f C", maxTemp);
+
+    display.setCursor(0, 18);
+    display.printf("Bawah: %.1f C", minTemp);
   }
 
   display.display();
