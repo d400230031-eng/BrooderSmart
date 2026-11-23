@@ -3,51 +3,176 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>EMQX Monitoring Anakan Jalak Bali</title>
+  <title>Smart Brooder Anakan Burung Jalak</title>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <style>
-    :root { --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --muted: #94a3b8; --accent: #38bdf8; --ok: #22c55e; --err: #ef4444; --warn: #f59e0b; --border: #334155; }
+    :root {
+      --bg: #090f1d;
+      --bg-grad: radial-gradient(circle at 15% 10%, rgba(56, 189, 248, 0.14), transparent 42%), radial-gradient(circle at 85% 0%, rgba(129, 140, 248, 0.12), transparent 40%);
+      --card: rgba(30, 41, 59, 0.92);
+      --card-elev: #162033;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-2: #0ea5e9;
+      --ok: #22c55e;
+      --err: #ef4444;
+      --warn: #f59e0b;
+      --border: rgba(148, 163, 184, 0.18);
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    body { background: var(--bg); color: var(--text); padding: 16px; min-height: 100vh; }
-    .container { max-width: 1120px; margin: 0 auto; display: grid; gap: 16px; }
-    header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; }
-    h1 { font-size: clamp(1.05rem, 2.2vw, 1.35rem); font-weight: 700; }
+    body {
+      background-color: var(--bg);
+      background-image: var(--bg-grad);
+      color: var(--text);
+      padding: 18px;
+      min-height: 100vh;
+    }
+    .container { max-width: 1120px; margin: 0 auto; display: grid; gap: 18px; }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 14px;
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.96), rgba(15, 23, 42, 0.96));
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px 18px;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+    }
+    .brand { display: flex; align-items: center; gap: 14px; }
+    .brand-logo {
+      width: 48px;
+      height: 48px;
+      object-fit: contain;
+      border-radius: 12px;
+      background: #060913;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      padding: 3px;
+      flex-shrink: 0;
+    }
+    .brand-title-wrap { display: flex; flex-direction: column; gap: 2px; }
+    h1 { font-size: clamp(1.08rem, 2.2vw, 1.38rem); font-weight: 750; letter-spacing: -0.01em; }
+    .brand-sub { font-size: 0.78rem; color: var(--muted); }
     .badges { display: flex; gap: 8px; flex-wrap: wrap; }
-    .badge { background: #0f172a; border: 1px solid var(--border); padding: 6px 12px; border-radius: 999px; font-size: 0.8rem; color: var(--muted); font-weight: 500; }
-    .badge.ok { border-color: var(--ok); color: #86efac; }
-    .badge.err { border-color: var(--err); color: #fca5a5; }
-    .badge.warn { border-color: var(--warn); color: #fcd34d; }
-    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
-    .card h2 { font-size: 0.95rem; color: var(--muted); font-weight: 600; }
-    .temp-val { font-size: clamp(2rem, 4vw, 2.6rem); font-weight: 800; color: var(--accent); line-height: 1.1; }
+    .badge {
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .badge.ok { border-color: rgba(34, 197, 94, 0.55); color: #86efac; background: rgba(34, 197, 94, 0.1); }
+    .badge.err { border-color: rgba(239, 68, 68, 0.55); color: #fca5a5; background: rgba(239, 68, 68, 0.1); }
+    .badge.warn { border-color: rgba(245, 158, 11, 0.55); color: #fcd34d; background: rgba(245, 158, 11, 0.1); }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+    }
+    .card h2 {
+      font-size: 0.96rem;
+      color: #e2e8f0;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card h2::before {
+      content: "";
+      width: 4px;
+      height: 15px;
+      border-radius: 999px;
+      background: var(--accent);
+      display: inline-block;
+    }
+    .temp-val { font-size: clamp(2.1rem, 4vw, 2.7rem); font-weight: 800; color: var(--accent); line-height: 1.1; }
     .sub { font-size: 0.84rem; color: var(--muted); line-height: 1.45; }
-    .alert-box { padding: 9px 12px; border-radius: 10px; font-size: 0.82rem; background: rgba(245, 158, 11, 0.14); border: 1px solid var(--warn); color: #fde68a; display: none; line-height: 1.4; }
+    .alert-box { padding: 10px 12px; border-radius: 11px; font-size: 0.82rem; background: rgba(245, 158, 11, 0.14); border: 1px solid var(--warn); color: #fde68a; display: none; line-height: 1.4; }
     .relay-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-    .relay-btn { background: #0f172a; color: var(--text); border: 1px solid #475569; border-radius: 10px; padding: 12px; text-align: left; cursor: pointer; transition: 0.15s; min-height: 62px; }
-    .relay-btn:hover { border-color: var(--accent); }
-    .relay-btn.on { border-color: var(--ok); background: rgba(34, 197, 94, 0.15); }
-    .relay-btn .name { font-weight: 600; font-size: 0.9rem; display: block; }
+    .relay-btn {
+      background: var(--card-elev);
+      color: var(--text);
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 12px 13px;
+      text-align: left;
+      cursor: pointer;
+      transition: 0.16s ease;
+      min-height: 64px;
+    }
+    .relay-btn:hover { border-color: var(--accent); transform: translateY(-1px); }
+    .relay-btn.on { border-color: var(--ok); background: rgba(34, 197, 94, 0.15); box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.2); }
+    .relay-btn .name { font-weight: 650; font-size: 0.9rem; display: block; }
     .relay-btn .state { font-size: 0.78rem; color: var(--muted); margin-top: 4px; display: block; }
-    .cam-box { width: 100%; aspect-ratio: 16 / 9; background: #020617; border-radius: 10px; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); position: relative; }
-    .cam-box:fullscreen { width: 100vw; height: 100vh; max-width: none; max-height: none; aspect-ratio: auto; border-radius: 0; border: none; background: #000; }
+    .relay-btn.on .state { color: #86efac; }
+    .cam-box {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: #040914;
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border);
+      position: relative;
+    }
     .cam-box img { width: 100%; height: 100%; object-fit: cover; display: block; }
-    .cam-box:fullscreen img, #cam-photo:fullscreen { width: 100vw; height: 100vh; max-width: none; max-height: none; object-fit: cover; }
-    .cam-placeholder { color: var(--muted); font-size: 0.88rem; padding: 16px; text-align: center; line-height: 1.5; }
+    .cam-placeholder { color: var(--muted); font-size: 0.88rem; padding: 18px; text-align: center; line-height: 1.5; }
     .controls-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
-    .input-group { flex: 1 1 150px; display: flex; flex-direction: column; gap: 4px; }
-    .input-group label { font-size: 0.76rem; color: var(--muted); }
-    input { width: 100%; background: #0f172a; color: var(--text); border: 1px solid #475569; border-radius: 10px; padding: 9px 12px; font-size: 0.9rem; }
-    button.action { background: var(--accent); color: #0f172a; font-weight: 700; border: none; border-radius: 10px; padding: 10px 15px; cursor: pointer; font-size: 0.88rem; transition: 0.15s; }
-    button.action:hover { filter: brightness(1.08); }
-    button.secondary { background: #334155; color: var(--text); font-weight: 600; border: none; border-radius: 10px; padding: 10px 15px; cursor: pointer; font-size: 0.88rem; transition: 0.15s; }
-    button.secondary:hover { background: #475569; }
-    button:disabled { opacity: 0.55; cursor: not-allowed; }
+    .input-group { flex: 1 1 150px; display: flex; flex-direction: column; gap: 5px; }
+    .input-group label { font-size: 0.78rem; color: #cbd5e1; font-weight: 500; }
+    input {
+      width: 100%;
+      background: #0b1324;
+      color: var(--text);
+      border: 1px solid #3b4c66;
+      border-radius: 11px;
+      padding: 10px 12px;
+      font-size: 0.9rem;
+      transition: border-color 0.15s ease;
+    }
+    input:focus { outline: none; border-color: var(--accent); }
+    button.action {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #06101e;
+      font-weight: 700;
+      border: none;
+      border-radius: 11px;
+      padding: 10px 16px;
+      cursor: pointer;
+      font-size: 0.88rem;
+      transition: 0.15s ease;
+    }
+    button.action:hover { filter: brightness(1.07); transform: translateY(-1px); }
+    button.secondary {
+      background: #2b3a52;
+      color: var(--text);
+      font-weight: 600;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 11px;
+      padding: 10px 16px;
+      cursor: pointer;
+      font-size: 0.88rem;
+      transition: 0.15s ease;
+    }
+    button.secondary:hover { background: #384b69; }
+    button:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
     .full-btn { width: 100%; }
     @media (max-width: 768px) {
       body { padding: 12px; }
       .grid { grid-template-columns: 1fr; gap: 12px; }
-      .card { padding: 14px; border-radius: 12px; }
+      .card { padding: 14px; border-radius: 14px; }
       .controls-row button.action, .controls-row button.secondary { flex: 1 1 auto; text-align: center; }
     }
   </style>
@@ -55,7 +180,13 @@
 <body>
   <div class="container">
     <header>
-      <h1>Brooder Jalak Bali \u2014 EMQX Realtime Control</h1>
+      <div class="brand">
+        <img src="logo-ums.jpeg" alt="Logo Universitas Muhammadiyah Surakarta" class="brand-logo" onerror="this.style.display='none'" />
+        <div class="brand-title-wrap">
+          <h1>Smart Brooder Anakan Burung Jalak</h1>
+          <span class="brand-sub">Universitas Muhammadiyah Surakarta &bull; Monitoring &amp; Kontrol Kandang</span>
+        </div>
+      </div>
       <div class="badges">
         <span class="badge" id="mqtt-status">Broker: Menghubungkan...</span>
         <span class="badge warn" id="esp-status">ESP32-S3: Menunggu Data</span>
@@ -72,11 +203,11 @@
 
         <div class="controls-row">
           <div class="input-group">
-            <label for="min-temp">Batas Bawah (\u00b0C)</label>
+            <label for="min-temp">Batas Bawah</label>
             <input type="number" step="0.1" id="min-temp" value="32.5" />
           </div>
           <div class="input-group">
-            <label for="max-temp">Batas Atas (\u00b0C)</label>
+            <label for="max-temp">Batas Atas</label>
             <input type="number" step="0.1" id="max-temp" value="33.5" />
           </div>
         </div>
@@ -94,14 +225,13 @@
     </div>
 
     <div class="card">
-      <h2>Foto Kondisi Burung (MQTT Chunked)</h2>
+      <h2>Foto Kondisi Burung</h2>
       <div class="cam-box" id="cam-box">
         <img id="cam-photo" alt="Foto Kondisi Burung" style="display: none;" />
         <div class="cam-placeholder" id="cam-placeholder">Klik "Ambil Foto Kondisi Burung" untuk memotret kandang.</div>
       </div>
       <div class="controls-row">
         <button class="action" id="capture-btn">Ambil Foto Kondisi Burung</button>
-        <button class="secondary" id="fullscreen-btn">Fullscreen Foto</button>
       </div>
       <div class="sub" id="photo-status">Belum ada foto diambil.</div>
     </div>

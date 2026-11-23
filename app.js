@@ -34,12 +34,10 @@ const brokerInput = document.getElementById("broker-url");
 const prefixInput = document.getElementById("topic-prefix");
 const userInput = document.getElementById("mqtt-user");
 const passInput = document.getElementById("mqtt-pass");
-const camBox = document.getElementById("cam-box");
 const camImg = document.getElementById("cam-photo");
 const camPlaceholder = document.getElementById("cam-placeholder");
 const photoStatusEl = document.getElementById("photo-status");
 const captureBtn = document.getElementById("capture-btn");
-const fullscreenBtn = document.getElementById("fullscreen-btn");
 
 brokerInput.value = brokerUrl;
 prefixInput.value = topicPrefix;
@@ -195,20 +193,6 @@ captureBtn.onclick = () => {
   photoStatusEl.textContent = "Meminta ESP32-S3 mengambil foto...";
   publishJson(`${topicPrefix}/cmd/capture`, { capture: 1 });
   setTimeout(() => { captureBtn.disabled = false; }, 15000);
-};
-
-fullscreenBtn.onclick = async () => {
-  try {
-    if (!document.fullscreenElement) {
-      if (camBox.requestFullscreen) {
-        await camBox.requestFullscreen();
-      } else if (camImg.requestFullscreen) {
-        await camImg.requestFullscreen();
-      }
-    } else if (document.exitFullscreen) {
-      await document.exitFullscreen();
-    }
-  } catch (_) {}
 };
 
 document.getElementById("save-limits").onclick = () => {
