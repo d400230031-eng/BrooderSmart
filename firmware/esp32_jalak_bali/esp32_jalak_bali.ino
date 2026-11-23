@@ -109,46 +109,50 @@ void updateOled() {
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
-  // Baris 1 (y = 2): Mode/Menu & Suhu (maks ~21 karakter)
-  display.setCursor(0, 2);
   if (encMenuState == ENC_SET_MAX) {
+    display.setCursor(0, 2);
     display.printf("SET ATAS : %.1fC", maxTemp);
-  } else if (encMenuState == ENC_SET_MIN) {
-    display.printf("SET BAWAH: %.1fC", minTemp);
-  } else if (isnan(cachedTemp)) {
-    display.printf("%s Suhu:--.-C", autoMode ? "OTOMATIS" : "MANUAL");
-  } else {
-    display.printf("%s Suhu:%.1fC", autoMode ? "OTOMATIS" : "MANUAL", cachedTemp);
+    display.setCursor(0, 18);
+    display.print("Putar:+/- Tekan:Bawah");
+    display.display();
+    return;
   }
 
-  // Baris 2 (y = 18): Lembap, Relay & Status WiFi/MQTT (maks ~21 karakter)
-  display.setCursor(0, 18);
-  if (encMenuState == ENC_SET_MAX) {
-    display.print("Putar:+/- Tekan:Bawah");
-  } else if (encMenuState == ENC_SET_MIN) {
+  if (encMenuState == ENC_SET_MIN) {
+    display.setCursor(0, 2);
+    display.printf("SET BAWAH: %.1fC", minTemp);
+    display.setCursor(0, 18);
     display.print("Putar:+/- Tekan:OK");
-  } else {
-    bool wifiOk = (WiFi.status() == WL_CONNECTED);
-    bool mqttOk = mqtt.connected();
-    char rlyStr[5];
-    snprintf(rlyStr, sizeof(rlyStr), "%d%d%d%d",
-             relayState[0] ? 1 : 0,
-             relayState[1] ? 1 : 0,
-             relayState[2] ? 1 : 0,
-             relayState[3] ? 1 : 0);
+    display.display();
+    return;
+  }
 
-    if (isnan(cachedHum)) {
-      display.printf("R:%s W:%s M:%s",
-                     rlyStr,
-                     wifiOk ? "YA" : "TDK",
-                     mqttOk ? "YA" : "TDK");
+  bool showPageTwo = ((millis() / 3000) % 2) == 1;
+  const char* modeLabel = autoMode ? "OTOMATIS" : "MANUAL";
+  bool wifiOk = (WiFi.status() == WL_CONNECTED);
+
+  if (!showPageTwo) {
+    // Halaman 1: Mode, Suhu, Kelembapan
+    display.setCursor(0, 2);
+    if (isnan(cachedTemp)) {
+      display.printf("Mode:%s S:--.-C", modeLabel);
     } else {
-      display.printf("L:%.0f%% R:%s W:%s M:%s",
-                     cachedHum,
-                     rlyStr,
-                     wifiOk ? "YA" : "TDK",
-                     mqttOk ? "YA" : "TDK");
+      display.printf("Mode:%s S:%.1fC", modeLabel, cachedTemp);
     }
+
+    display.setCursor(0, 18);
+    if (isnan(cachedHum)) {
+      display.print("Lembap: --%");
+    } else {
+      display.printf("Lembap: %.0f%%", cachedHum);
+    }
+  } else {
+    // Halaman 2: Suhu Atas, Suhu Bawah, Status WiFi
+    display.setCursor(0, 2);
+    display.printf("Atas:%.1fC Bawah:%.1fC", maxTemp, minTemp);
+
+    display.setCursor(0, 18);
+    display.printf("WiFi: %s", wifiOk ? "TERHUBUNG" : "BELUM");
   }
 
   display.display();
