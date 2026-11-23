@@ -4,10 +4,10 @@ const ESP_STALE_MS = 10000;
 const DEG = "\u00b0C";
 
 const relays = [
-  { id: 1, label: "CH1: Bohlam 1 (Heat)", on: false },
-  { id: 2, label: "CH2: Bohlam 2 (Heat)", on: false },
-  { id: 3, label: "CH3: Kipas 1 (Cool)", on: false },
-  { id: 4, label: "CH4: Kipas 2 (Cool)", on: false }
+  { id: 1, label: "CH1: Bohlam 1", on: false },
+  { id: 2, label: "CH2: Bohlam 2", on: false },
+  { id: 3, label: "CH3: Kipas 1", on: false },
+  { id: 4, label: "CH4: Kipas 2", on: false }
 ];
 
 let autoMode = true;
