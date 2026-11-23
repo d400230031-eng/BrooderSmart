@@ -9,8 +9,8 @@
 #include "esp_camera.h"
 #include "mbedtls/base64.h"
 
-const char* WIFI_SSID = "Aryo Sidiq";
-const char* WIFI_PASS = "cukitooo";
+const char* WIFI_SSID = "Lemott_2.4G";
+const char* WIFI_PASS = "lemot321";
 
 const char* MQTT_HOST      = "w13913d1.ala.us-east-1.emqxsl.com";
 const int   MQTT_PORT      = 8883;
@@ -71,7 +71,7 @@ bool autoMode = true;
 float minTemp = 32.5;
 float maxTemp = 33.5;
 
-bool encMenuActive = false;
+enum EncMenuState { ENC_IDLE = 0, ENC_SET_MAX = 1, ENC_SET_MIN = 2 };`nEncMenuState encMenuState = ENC_IDLE;
 int lastEncClk = HIGH;
 int lastEncSw = HIGH;
 unsigned long lastSwMs = 0;
@@ -109,8 +109,10 @@ void updateOled() {
   display.setTextColor(SSD1306_WHITE);
   display.setCursor(0, 0);
 
-  if (encMenuActive) {
-    display.printf("SET L:%.1f H:%.1f\n", minTemp, maxTemp);
+  if (encMenuState == ENC_SET_MAX) {
+    display.printf("SET ATAS(H):%.1f\n", maxTemp);
+  } else if (encMenuState == ENC_SET_MIN) {
+    display.printf("SET BAWAH(L):%.1f\n", minTemp);
   } else if (isnan(cachedTemp) || isnan(cachedHum)) {
     display.printf("%s T:--.-C H:--%%\n", autoMode ? "AUTO" : "MAN");
   } else {
@@ -126,8 +128,10 @@ void updateOled() {
                  relayState[3] ? 1 : 0);
 
   display.setCursor(0, 24);
-  if (encMenuActive) {
-    display.print("R:+H L:-L SW:OK");
+  if (encMenuState == ENC_SET_MAX) {
+    display.print("R:+H L:-H SW:NEXT");
+  } else if (encMenuState == ENC_SET_MIN) {
+    display.print("R:+L L:-L SW:OK");
   } else {
     display.printf("W:%s M:%s C:%s",
                  WiFi.status() == WL_CONNECTED ? "OK" : "--",
@@ -150,7 +154,7 @@ void publishTelemetry() {
   doc["auto"] = autoMode;
   doc["minTemp"] = serialized(String(minTemp, 1));
   doc["maxTemp"] = serialized(String(maxTemp, 1));
-  doc["encMenu"] = encMenuActive;
+  doc["encMenu"] = (encMenuState != ENC_IDLE);
 
   JsonArray rArr = doc["relays"].to<JsonArray>();
   for (int i = 0; i < 4; i++) {
@@ -184,11 +188,13 @@ void handleRotaryEncoder() {
   int swVal = digitalRead(ENC_SW);
   if (lastEncSw == HIGH && swVal == LOW && (now - lastSwMs > 250)) {
     lastSwMs = now;
-    if (!encMenuActive) {
-      encMenuActive = true;
+    if (encMenuState == ENC_IDLE) {
+      encMenuState = ENC_SET_MAX;
       autoMode = false;
+    } else if (encMenuState == ENC_SET_MAX) {
+      encMenuState = ENC_SET_MIN;
     } else {
-      encMenuActive = false;
+      encMenuState = ENC_IDLE;
       autoMode = true;
       applyAutoControl();
       publishTelemetry();
@@ -199,13 +205,22 @@ void handleRotaryEncoder() {
 
   int clkVal = digitalRead(ENC_CLK);
   if (clkVal != lastEncClk && clkVal == LOW) {
-    if (encMenuActive) {
-      if (digitalRead(ENC_DT) != clkVal) {
+    bool clockwise = (digitalRead(ENC_DT) != clkVal);
+    if (encMenuState == ENC_SET_MAX) {
+      if (clockwise) {
         maxTemp = roundf((maxTemp + 0.1f) * 10.0f) / 10.0f;
+      } else {
+        maxTemp = roundf((maxTemp - 0.1f) * 10.0f) / 10.0f;
         if (maxTemp <= minTemp) maxTemp = roundf((minTemp + 0.1f) * 10.0f) / 10.0f;
+      }
+      updateOled();
+      publishTelemetry();
+    } else if (encMenuState == ENC_SET_MIN) {
+      if (clockwise) {
+        minTemp = roundf((minTemp + 0.1f) * 10.0f) / 10.0f;
+        if (minTemp >= maxTemp) minTemp = roundf((maxTemp - 0.1f) * 10.0f) / 10.0f;
       } else {
         minTemp = roundf((minTemp - 0.1f) * 10.0f) / 10.0f;
-        if (minTemp >= maxTemp) minTemp = roundf((maxTemp - 0.1f) * 10.0f) / 10.0f;
       }
       updateOled();
       publishTelemetry();
@@ -329,13 +344,13 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     int st = doc["state"] | 0;
     if (ch >= 1 && ch <= 4) {
       autoMode = false;
-      encMenuActive = false;
+      encMenuState = ENC_IDLE;
       writeRelayPin(ch - 1, st != 0);
       publishTelemetry();
     }
   } else if (t == TOPIC_CMD_MODE) {
     autoMode = doc["auto"] | true;
-    if (autoMode) encMenuActive = false;
+    if (autoMode) encMenuState = ENC_IDLE;
     if (autoMode) applyAutoControl();
     publishTelemetry();
   } else if (t == TOPIC_CMD_LIMITS) {
@@ -345,7 +360,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     publishTelemetry();
   } else if (t == TOPIC_CMD_OFF) {
     autoMode = false;
-    encMenuActive = false;
+    encMenuState = ENC_IDLE;
     setAllRelaysOff();
     publishTelemetry();
   }
