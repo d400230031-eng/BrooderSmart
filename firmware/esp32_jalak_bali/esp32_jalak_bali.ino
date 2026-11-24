@@ -217,11 +217,12 @@ void applyAutoControl() {
     return;
   }
 
+  bool prevRelays[4] = { relayState[0], relayState[1], relayState[2], relayState[3] };
   bool lampOn = false;
   bool fanOn  = false;
 
   if (cachedTemp < minTemp) {
-    // Suhu di bawah set suhu bawah: kedua lampu menyala, kipas mati
+    // Suhu di bawah set suhu bawah: lampu menyala, kipas mati
     lampOn = true;
     fanOn  = false;
   } else if (cachedTemp > maxTemp) {
@@ -229,7 +230,7 @@ void applyAutoControl() {
     lampOn = false;
     fanOn  = true;
   } else {
-    // Di antara batas bawah dan atas: semua mati
+    // Suhu sudah di antara set suhu bawah dan set suhu atas: semua mati
     lampOn = false;
     fanOn  = false;
   }
@@ -239,6 +240,17 @@ void applyAutoControl() {
   writeRelayPin(1, lampOn);
   writeRelayPin(2, fanOn);
   writeRelayPin(3, fanOn);
+
+  bool changed = false;
+  for (int i = 0; i < 4; i++) {
+    if (relayState[i] != prevRelays[i]) {
+      changed = true;
+      break;
+    }
+  }
+  if (changed) {
+    publishTelemetry();
+  }
 }
 
 void handleRotaryEncoder() {
