@@ -332,24 +332,6 @@ void sendCapturedPhotoMqtt() {
     return;
   }
 
-  sensor_t *s = esp_camera_sensor_get();
-  if (s) {
-    s->set_whitebal(s, 1);
-    s->set_awb_gain(s, 1);
-    s->set_wb_mode(s, 0);
-    s->set_exposure_ctrl(s, 1);
-    s->set_gain_ctrl(s, 1);
-  }
-
-  // Buang beberapa frame awal agar AWB & exposure stabil (mengurangi rona hijau)
-  for (int w = 0; w < 4; w++) {
-    camera_fb_t *warmFb = esp_camera_fb_get();
-    if (warmFb) {
-      esp_camera_fb_return(warmFb);
-      delay(40);
-      mqtt.loop();
-    }
-  }
 
   camera_fb_t *fb = esp_camera_fb_get();
   if (!fb) {
