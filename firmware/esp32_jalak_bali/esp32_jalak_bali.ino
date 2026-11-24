@@ -218,21 +218,23 @@ void applyAutoControl() {
   }
 
   bool prevRelays[4] = { relayState[0], relayState[1], relayState[2], relayState[3] };
-  bool lampOn = false;
-  bool fanOn  = false;
 
+  // Status awal mengikuti kondisi relay saat ini (histeresis / latch)
+  bool lampOn = relayState[0] || relayState[1];
+  bool fanOn  = relayState[2] || relayState[3];
+
+  // Lampu: ON jika suhu < batas bawah, tetap ON sampai suhu > batas atas
   if (cachedTemp < minTemp) {
-    // Suhu di bawah set suhu bawah: lampu menyala, kipas mati
     lampOn = true;
-    fanOn  = false;
   } else if (cachedTemp > maxTemp) {
-    // Suhu di atas set suhu atas: lampu mati, kipas menyala
     lampOn = false;
-    fanOn  = true;
-  } else {
-    // Suhu sudah di antara set suhu bawah dan set suhu atas: semua mati
-    lampOn = false;
-    fanOn  = false;
+  }
+
+  // Kipas: ON jika suhu > batas atas, tetap ON sampai suhu < batas bawah
+  if (cachedTemp > maxTemp) {
+    fanOn = true;
+  } else if (cachedTemp < minTemp) {
+    fanOn = false;
   }
 
   // CH1 & CH2 = Lampu, CH3 & CH4 = Kipas
