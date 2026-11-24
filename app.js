@@ -14,6 +14,7 @@ let autoMode = true;
 let client = null;
 let lastTelemetryAt = 0;
 let photoChunks = {};
+let activePhotoSessionId = null;
 
 let brokerUrl = (localStorage.getItem("emqx_wss_url") || DEFAULT_WSS_URL).trim();
 let topicPrefix = (localStorage.getItem("emqx_topic_prefix") || DEFAULT_PREFIX).trim().replace(/\/+$/, "");
@@ -93,8 +94,10 @@ function handlePhotoChunk(rawMsg) {
   try {
     const pkt = JSON.parse(rawMsg);
     if (!pkt.id || typeof pkt.idx !== "number" || typeof pkt.total !== "number" || !pkt.data) return;
+    if (activePhotoSessionId !== null && pkt.id < activePhotoSessionId) return;
 
     if (!photoChunks[pkt.id]) {
+      photoChunks = {};
       photoChunks[pkt.id] = { total: pkt.total, parts: new Array(pkt.total), createdAt: Date.now() };
     }
     photoChunks[pkt.id].parts[pkt.idx] = pkt.data;
@@ -107,7 +110,10 @@ function handlePhotoChunk(rawMsg) {
       delete photoChunks[pkt.id];
       camPlaceholder.style.display = "none";
       camImg.style.display = "block";
-      camImg.src = `data:image/jpeg;base64,${base64Str}`;
+      camImg.removeAttribute("src");
+      requestAnimationFrame(() => {
+        camImg.src = `data:image/jpeg;base64,${base64Str}`;
+      });
       photoStatusEl.textContent = `Foto diterima jam ${new Date().toLocaleTimeString("id-ID")}`;
       captureBtn.disabled = false;
     }
@@ -189,6 +195,8 @@ captureBtn.onclick = () => {
     photoStatusEl.textContent = "Broker belum terhubung.";
     return;
   }
+  photoChunks = {};
+  activePhotoSessionId = Date.now();
   captureBtn.disabled = true;
   photoStatusEl.textContent = "Meminta ESP32-S3 mengambil foto...";
   publishJson(`${topicPrefix}/cmd/capture`, { capture: 1 });

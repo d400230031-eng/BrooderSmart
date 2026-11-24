@@ -216,15 +216,29 @@ void applyAutoControl() {
     setAllRelaysOff();
     return;
   }
-  for (int i = 0; i < 4; i++) {
-    bool wantOn = false;
-    if (cachedTemp < minTemp && strcmp(RELAY_TYPES[i], "heat") == 0) {
-      wantOn = true;
-    } else if (cachedTemp > maxTemp && strcmp(RELAY_TYPES[i], "fan") == 0) {
-      wantOn = true;
-    }
-    writeRelayPin(i, wantOn);
+
+  bool lampOn = false;
+  bool fanOn  = false;
+
+  if (cachedTemp < minTemp) {
+    // Suhu di bawah set suhu bawah: kedua lampu menyala, kipas mati
+    lampOn = true;
+    fanOn  = false;
+  } else if (cachedTemp > maxTemp) {
+    // Suhu di atas set suhu atas: lampu mati, kipas menyala
+    lampOn = false;
+    fanOn  = true;
+  } else {
+    // Di antara batas bawah dan atas: semua mati
+    lampOn = false;
+    fanOn  = false;
   }
+
+  // CH1 & CH2 = Lampu, CH3 & CH4 = Kipas
+  writeRelayPin(0, lampOn);
+  writeRelayPin(1, lampOn);
+  writeRelayPin(2, fanOn);
+  writeRelayPin(3, fanOn);
 }
 
 void handleRotaryEncoder() {
@@ -316,6 +330,25 @@ void sendCapturedPhotoMqtt() {
   if (!cameraReady || !mqtt.connected()) {
     Serial.println("Kamera atau MQTT belum siap untuk ambil foto");
     return;
+  }
+
+  sensor_t *s = esp_camera_sensor_get();
+  if (s) {
+    s->set_whitebal(s, 1);
+    s->set_awb_gain(s, 1);
+    s->set_wb_mode(s, 0);
+    s->set_exposure_ctrl(s, 1);
+    s->set_gain_ctrl(s, 1);
+  }
+
+  // Buang beberapa frame awal agar AWB & exposure stabil (mengurangi rona hijau)
+  for (int w = 0; w < 4; w++) {
+    camera_fb_t *warmFb = esp_camera_fb_get();
+    if (warmFb) {
+      esp_camera_fb_return(warmFb);
+      delay(40);
+      mqtt.loop();
+    }
   }
 
   camera_fb_t *fb = esp_camera_fb_get();
