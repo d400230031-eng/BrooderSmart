@@ -139,6 +139,56 @@ void ensureEncoderTargetInitialized() {
   }
 }
 
+static int encPrevClkState = HIGH;
+static unsigned long encLastStepMs = 0;
+
+void stepEncoderTemp(float &targetTemp, float fallbackVal) {
+  int clkPin = -1;
+  int dtPin  = -1;
+#if defined(ENC_CLK_PIN)
+  clkPin = ENC_CLK_PIN;
+#elif defined(PIN_ENC_CLK)
+  clkPin = PIN_ENC_CLK;
+#elif defined(CLK_PIN)
+  clkPin = CLK_PIN;
+#else
+  clkPin = 1;
+#endif
+
+#if defined(ENC_DT_PIN)
+  dtPin = ENC_DT_PIN;
+#elif defined(PIN_ENC_DT)
+  dtPin = PIN_ENC_DT;
+#elif defined(DT_PIN)
+  dtPin = DT_PIN;
+#else
+  dtPin = 2;
+#endif
+
+  if (isnan(targetTemp)) {
+    targetTemp = fallbackVal;
+  }
+
+  int clkNow = digitalRead(clkPin);
+  int dtNow  = digitalRead(dtPin);
+  unsigned long now = millis();
+
+  if (clkNow != encPrevClkState && (now - encLastStepMs) >= 40) {
+    if (clkNow == LOW) {
+      if (dtNow != clkNow) {
+        targetTemp += 0.1f;
+      } else {
+        targetTemp -= 0.1f;
+      }
+      if (targetTemp < 20.0f) targetTemp = 20.0f;
+      if (targetTemp > 45.0f) targetTemp = 45.0f;
+      targetTemp = roundf(targetTemp * 10.0f) / 10.0f;
+      encLastStepMs = now;
+    }
+  }
+  encPrevClkState = clkNow;
+}
+
 void updateOled() {
   if (!oledReady) return;
   display.clearDisplay();
