@@ -207,6 +207,8 @@ document.getElementById("save-limits").onclick = () => {
     }
     lastLimitSetAt = Date.now();
   isEditingLimits = false;
+  lastLimitSetAt = Date.now();
+  isEditingLimits = false;
   publishJson(`${topicPrefix}/cmd/limits`, { min: minVal, max: maxVal });
   }
 };
