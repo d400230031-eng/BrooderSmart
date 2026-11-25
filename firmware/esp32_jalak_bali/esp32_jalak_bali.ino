@@ -211,6 +211,19 @@ void stepEncoderTemp(float &targetTemp, float fallbackVal) {
   encPrevClkState = clkNow;
 }
 
+void clampTempLimits() {
+  if (!isnan(minTemp)) {
+    if (minTemp < 25.0f) minTemp = 25.0f;
+    if (minTemp > 50.0f) minTemp = 50.0f;
+    minTemp = roundf(minTemp * 10.0f) / 10.0f;
+  }
+  if (!isnan(maxTemp)) {
+    if (maxTemp < 25.0f) maxTemp = 25.0f;
+    if (maxTemp > 50.0f) maxTemp = 50.0f;
+    maxTemp = roundf(maxTemp * 10.0f) / 10.0f;
+  }
+}
+
 void updateOled() {
   if (!oledReady) return;
   display.clearDisplay();
@@ -224,6 +237,7 @@ void updateOled() {
     display.printf("Atas: %.1f C", maxTemp);
     display.setCursor(0, 18);
     display.print("Putar:+/- Tekan:Bawah");
+  clampTempLimits();
     display.display();
     return;
   }
@@ -235,6 +249,7 @@ void updateOled() {
     display.printf("Bawah: %.1f C", minTemp);
     display.setCursor(0, 18);
     display.print("Putar:+/- Tekan:OK");
+  clampTempLimits();
     display.display();
     return;
   }
@@ -278,6 +293,7 @@ void updateOled() {
       display.printf("Bawah: %.1f C", minTemp);
     }
   }
+  clampTempLimits();
 
   display.display();
 }
@@ -369,6 +385,7 @@ void handleRotaryEncoder() {
       applyAutoControl();
       publishTelemetry();
     }
+  clampTempLimits();
     updateOled();
   }
   lastEncSw = swVal;
@@ -384,6 +401,7 @@ void handleRotaryEncoder() {
         maxTemp = roundf((maxTemp - 0.1f) * 10.0f) / 10.0f;
         if (maxTemp <= minTemp) maxTemp = roundf((minTemp + 0.1f) * 10.0f) / 10.0f;
       }
+  clampTempLimits();
       updateOled();
       publishTelemetry();
     } else if (encMenuState == ENC_SET_MIN) {
@@ -394,6 +412,7 @@ void handleRotaryEncoder() {
       } else {
         minTemp = roundf((minTemp - 0.1f) * 10.0f) / 10.0f;
       }
+  clampTempLimits();
       updateOled();
       publishTelemetry();
     }
@@ -539,6 +558,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     setAllRelaysOff();
     publishTelemetry();
   }
+  clampTempLimits();
   updateOled();
 }
 
@@ -597,6 +617,7 @@ void setup() {
     display.println("Brooder Jalak Bali");
     display.setCursor(0, 18);
     display.println("Siap Digunakan");
+  clampTempLimits();
     display.display();
   } else {
     Serial.println("OLED SSD1306 gagal diinisialisasi");
@@ -609,6 +630,7 @@ void setup() {
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
   mqtt.setBufferSize(4096);
   mqtt.setCallback(mqttCallback);
+  clampTempLimits();
   updateOled();
 }
 
@@ -640,6 +662,7 @@ void loop() {
 
   if (now - lastOledMs >= 1000) {
     lastOledMs = now;
+  clampTempLimits();
     updateOled();
   }
 
