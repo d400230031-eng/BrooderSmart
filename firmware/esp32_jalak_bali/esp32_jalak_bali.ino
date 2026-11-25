@@ -129,6 +129,16 @@ void saveTempLimits() {
   limitPrefs.end();
 }
 
+void ensureEncoderTargetInitialized() {
+  if (encMenuState == ENC_SET_MAX && isnan(maxTemp)) {
+    if (isnan(maxTemp)) maxTemp = 33.5f;
+    maxTemp = 33.5f;
+  } else if (encMenuState == ENC_SET_MIN && isnan(minTemp)) {
+    if (isnan(minTemp)) minTemp = 32.5f;
+    minTemp = 32.5f;
+  }
+}
+
 void updateOled() {
   if (!oledReady) return;
   display.clearDisplay();
@@ -136,8 +146,10 @@ void updateOled() {
   display.setTextColor(SSD1306_WHITE);
 
   if (encMenuState == ENC_SET_MAX) {
+    if (isnan(maxTemp)) maxTemp = 33.5f;
+    if (isnan(maxTemp)) maxTemp = 33.5f;
     display.setCursor(0, 2);
-    if (isnan(maxTemp)) display.print("Atas: --.- C"); else display.printf("Atas: %.1f C", maxTemp);
+    display.printf("Atas: %.1f C", maxTemp);
     display.setCursor(0, 18);
     display.print("Putar:+/- Tekan:Bawah");
     display.display();
@@ -145,8 +157,10 @@ void updateOled() {
   }
 
   if (encMenuState == ENC_SET_MIN) {
+    if (isnan(minTemp)) minTemp = 32.5f;
+    if (isnan(minTemp)) minTemp = 32.5f;
     display.setCursor(0, 2);
-    if (isnan(minTemp)) display.print("Bawah: --.- C"); else display.printf("Bawah: %.1f C", minTemp);
+    display.printf("Bawah: %.1f C", minTemp);
     display.setCursor(0, 18);
     display.print("Putar:+/- Tekan:OK");
     display.display();
@@ -162,7 +176,7 @@ void updateOled() {
     display.printf("Mode: %s", modeLabel);
 
     display.setCursor(0, 18);
-    if (isnan(cachedTemp) || isnan(minTemp) || isnan(maxTemp)) {
+    if (isnan(cachedTemp)) {
       display.print("Suhu: --.- C");
     } else {
       display.printf("Suhu: %.1f C", cachedTemp);
@@ -179,10 +193,18 @@ void updateOled() {
     display.printf("WiFi: %s", wifiOk ? "TERHUBUNG" : "BELUM");
   } else {
     display.setCursor(0, 2);
-    if (isnan(maxTemp)) display.print("Atas: --.- C"); else display.printf("Atas: %.1f C", maxTemp);
+    if (isnan(maxTemp)) {
+      display.print("Atas: --.- C");
+    } else {
+      display.printf("Atas: %.1f C", maxTemp);
+    }
 
     display.setCursor(0, 18);
-    if (isnan(minTemp)) display.print("Bawah: --.- C"); else display.printf("Bawah: %.1f C", minTemp);
+    if (isnan(minTemp)) {
+      display.print("Bawah: --.- C");
+    } else {
+      display.printf("Bawah: %.1f C", minTemp);
+    }
   }
 
   display.display();
@@ -266,6 +288,7 @@ void handleRotaryEncoder() {
       encMenuState = ENC_SET_MAX;
       autoMode = false;
     } else if (encMenuState == ENC_SET_MAX) {
+    if (isnan(maxTemp)) maxTemp = 33.5f;
       encMenuState = ENC_SET_MIN;
     } else {
       encMenuState = ENC_IDLE;
@@ -282,6 +305,7 @@ void handleRotaryEncoder() {
   if (clkVal != lastEncClk && clkVal == LOW) {
     bool clockwise = (digitalRead(ENC_DT) != clkVal);
     if (encMenuState == ENC_SET_MAX) {
+    if (isnan(maxTemp)) maxTemp = 33.5f;
       if (clockwise) {
         maxTemp = roundf((maxTemp + 0.1f) * 10.0f) / 10.0f;
       } else {
@@ -291,6 +315,7 @@ void handleRotaryEncoder() {
       updateOled();
       publishTelemetry();
     } else if (encMenuState == ENC_SET_MIN) {
+    if (isnan(minTemp)) minTemp = 32.5f;
       if (clockwise) {
         minTemp = roundf((minTemp + 0.1f) * 10.0f) / 10.0f;
         if (minTemp >= maxTemp) minTemp = roundf((maxTemp - 0.1f) * 10.0f) / 10.0f;
