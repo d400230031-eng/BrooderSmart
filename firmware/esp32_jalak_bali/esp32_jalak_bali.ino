@@ -69,9 +69,8 @@ bool relayState[4] = {false, false, false, false};
 #define PCLK_GPIO_NUM  13
 
 bool autoMode = true;
-float minTemp = 32.5;
-float maxTemp = 33.5;
-
+float minTemp = NAN;
+float maxTemp = NAN;
 enum EncMenuState { ENC_IDLE = 0, ENC_SET_MAX = 1, ENC_SET_MIN = 2 };
 EncMenuState encMenuState = ENC_IDLE;
 int lastEncClk = HIGH;
@@ -107,21 +106,24 @@ void setAllRelaysOff() {
 
 void loadSavedTempLimits() {
   limitPrefs.begin("brooder_limits", true);
-  float savedMin = limitPrefs.getFloat("minTemp", 32.5f);
-  float savedMax = limitPrefs.getFloat("maxTemp", 33.5f);
+  bool hasSaved = limitPrefs.getBool("hasLimits", false);
+  float savedMin = limitPrefs.getFloat("minTemp", NAN);
+  float savedMax = limitPrefs.getFloat("maxTemp", NAN);
   limitPrefs.end();
 
-  if (!isnan(savedMin) && !isnan(savedMax) && savedMin < savedMax && savedMin >= 0.0f && savedMax <= 60.0f) {
+  if (hasSaved && !isnan(savedMin) && !isnan(savedMax) && savedMin < savedMax && savedMin >= 0.0f && savedMax <= 60.0f) {
     minTemp = roundf(savedMin * 10.0f) / 10.0f;
     maxTemp = roundf(savedMax * 10.0f) / 10.0f;
   } else {
-    minTemp = 32.5f;
-    maxTemp = 33.5f;
+    minTemp = NAN;
+    maxTemp = NAN;
   }
 }
 
 void saveTempLimits() {
+  if (isnan(minTemp) || isnan(maxTemp)) return;
   limitPrefs.begin("brooder_limits", false);
+  limitPrefs.putBool("hasLimits", true);
   limitPrefs.putFloat("minTemp", minTemp);
   limitPrefs.putFloat("maxTemp", maxTemp);
   limitPrefs.end();
@@ -135,7 +137,7 @@ void updateOled() {
 
   if (encMenuState == ENC_SET_MAX) {
     display.setCursor(0, 2);
-    display.printf("Atas: %.1f C", maxTemp);
+    if (isnan(maxTemp)) display.print("Atas: --.- C"); else display.printf("Atas: %.1f C", maxTemp);
     display.setCursor(0, 18);
     display.print("Putar:+/- Tekan:Bawah");
     display.display();
@@ -144,7 +146,7 @@ void updateOled() {
 
   if (encMenuState == ENC_SET_MIN) {
     display.setCursor(0, 2);
-    display.printf("Bawah: %.1f C", minTemp);
+    if (isnan(minTemp)) display.print("Bawah: --.- C"); else display.printf("Bawah: %.1f C", minTemp);
     display.setCursor(0, 18);
     display.print("Putar:+/- Tekan:OK");
     display.display();
@@ -160,7 +162,7 @@ void updateOled() {
     display.printf("Mode: %s", modeLabel);
 
     display.setCursor(0, 18);
-    if (isnan(cachedTemp)) {
+    if (isnan(cachedTemp) || isnan(minTemp) || isnan(maxTemp)) {
       display.print("Suhu: --.- C");
     } else {
       display.printf("Suhu: %.1f C", cachedTemp);
@@ -177,10 +179,10 @@ void updateOled() {
     display.printf("WiFi: %s", wifiOk ? "TERHUBUNG" : "BELUM");
   } else {
     display.setCursor(0, 2);
-    display.printf("Atas: %.1f C", maxTemp);
+    if (isnan(maxTemp)) display.print("Atas: --.- C"); else display.printf("Atas: %.1f C", maxTemp);
 
     display.setCursor(0, 18);
-    display.printf("Bawah: %.1f C", minTemp);
+    if (isnan(minTemp)) display.print("Bawah: --.- C"); else display.printf("Bawah: %.1f C", minTemp);
   }
 
   display.display();
@@ -189,7 +191,7 @@ void updateOled() {
 void publishTelemetry() {
   if (!mqtt.connected()) return;
   JsonDocument doc;
-  if (isnan(cachedTemp)) doc["temp"] = nullptr;
+  if (isnan(cachedTemp) || isnan(minTemp) || isnan(maxTemp)) doc["temp"] = nullptr;
   else doc["temp"] = serialized(String(cachedTemp, 1));
 
   if (isnan(cachedHum)) doc["hum"] = nullptr;
@@ -212,7 +214,7 @@ void publishTelemetry() {
 
 void applyAutoControl() {
   if (!autoMode) return;
-  if (isnan(cachedTemp)) {
+  if (isnan(cachedTemp) || isnan(minTemp) || isnan(maxTemp)) {
     setAllRelaysOff();
     return;
   }
