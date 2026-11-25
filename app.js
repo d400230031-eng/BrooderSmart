@@ -1,3 +1,5 @@
+let isEditingLimits = false;
+let lastLimitSetAt = 0;
 const DEFAULT_WSS_URL = "wss://w13913d1.ala.us-east-1.emqxsl.com:8084/mqtt";
 const DEFAULT_PREFIX = "SmartBrooder/jalak";
 const ESP_STALE_MS = 10000;
@@ -203,7 +205,9 @@ document.getElementById("save-limits").onclick = () => {
       alert("Peringatan: Batas Bawah harus lebih kecil dari Batas Atas!");
       return;
     }
-    publishJson(`${topicPrefix}/cmd/limits`, { min: minVal, max: maxVal });
+    lastLimitSetAt = Date.now();
+  isEditingLimits = false;
+  publishJson(`${topicPrefix}/cmd/limits`, { min: minVal, max: maxVal });
   }
 };
 
@@ -243,3 +247,11 @@ renderRelays();
 connectMqtt();
 updateEspHealth();
 setInterval(updateEspHealth, 2000);
+if (typeof minInput !== "undefined" && minInput) {
+  minInput.addEventListener("focus", () => { isEditingLimits = true; });
+  minInput.addEventListener("blur", () => { setTimeout(() => { isEditingLimits = false; }, 400); });
+}
+if (typeof maxInput !== "undefined" && maxInput) {
+  maxInput.addEventListener("focus", () => { isEditingLimits = true; });
+  maxInput.addEventListener("blur", () => { setTimeout(() => { isEditingLimits = false; }, 400); });
+}
