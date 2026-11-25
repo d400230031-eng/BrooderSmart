@@ -173,15 +173,15 @@ void stepEncoderTemp(float &targetTemp, float fallbackVal) {
   int dtNow  = digitalRead(dtPin);
   unsigned long now = millis();
 
-  if (clkNow != encPrevClkState && (now - encLastStepMs) >= 40) {
+  if (clkNow != encPrevClkState && (now - encLastStepMs) >= 80) {
     if (clkNow == LOW) {
       if (dtNow != clkNow) {
         targetTemp += 0.1f;
       } else {
         targetTemp -= 0.1f;
       }
-      if (targetTemp < 20.0f) targetTemp = 20.0f;
-      if (targetTemp > 45.0f) targetTemp = 45.0f;
+      if (targetTemp < 25.0f) targetTemp = 25.0f;
+      if (targetTemp > 50.0f) targetTemp = 50.0f;
       targetTemp = roundf(targetTemp * 10.0f) / 10.0f;
       encLastStepMs = now;
     }
