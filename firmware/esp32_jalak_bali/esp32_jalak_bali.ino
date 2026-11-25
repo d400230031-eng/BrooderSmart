@@ -142,38 +142,60 @@ void ensureEncoderTargetInitialized() {
 static int encPrevClkState = HIGH;
 static unsigned long encLastStepMs = 0;
 
-void stepEncoderTemp(float &targetTemp, float fallbackVal) {
-  int clkPin = -1;
-  int dtPin  = -1;
+int resolveEncClkPin() {
 #if defined(ENC_CLK_PIN)
-  clkPin = ENC_CLK_PIN;
+  return ENC_CLK_PIN;
 #elif defined(PIN_ENC_CLK)
-  clkPin = PIN_ENC_CLK;
+  return PIN_ENC_CLK;
+#elif defined(ENC_CLK)
+  return ENC_CLK;
 #elif defined(CLK_PIN)
-  clkPin = CLK_PIN;
+  return CLK_PIN;
+#elif defined(PIN_CLK)
+  return PIN_CLK;
 #else
-  clkPin = 1;
+  return 1;
 #endif
+}
 
+int resolveEncDtPin() {
 #if defined(ENC_DT_PIN)
-  dtPin = ENC_DT_PIN;
+  return ENC_DT_PIN;
 #elif defined(PIN_ENC_DT)
-  dtPin = PIN_ENC_DT;
+  return PIN_ENC_DT;
+#elif defined(ENC_DT)
+  return ENC_DT;
 #elif defined(DT_PIN)
-  dtPin = DT_PIN;
+  return DT_PIN;
+#elif defined(PIN_DT)
+  return PIN_DT;
 #else
-  dtPin = 2;
+  return 2;
 #endif
+}
+
+void stepEncoderTemp(float &targetTemp, float fallbackVal) {
+  int clkPin = resolveEncClkPin();
+  int dtPin  = resolveEncDtPin();
+
+  pinMode(clkPin, INPUT_PULLUP);
+  pinMode(dtPin, INPUT_PULLUP);
 
   if (isnan(targetTemp)) {
     targetTemp = fallbackVal;
   }
 
+  int clkRaw = digitalRead(clkPin);
+  delayMicroseconds(500);
   int clkNow = digitalRead(clkPin);
-  int dtNow  = digitalRead(dtPin);
+  if (clkNow != clkRaw) {
+    return;
+  }
+
+  int dtNow = digitalRead(dtPin);
   unsigned long now = millis();
 
-  if (clkNow != encPrevClkState && (now - encLastStepMs) >= 80) {
+  if (clkNow != encPrevClkState && (now - encLastStepMs) >= 150) {
     if (clkNow == LOW) {
       if (dtNow != clkNow) {
         targetTemp += 0.1f;
