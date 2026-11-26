@@ -185,21 +185,13 @@ void stepEncoderTemp(float &targetTemp, float fallbackVal) {
     targetTemp = fallbackVal;
   }
 
-  int clk1 = digitalRead(clkPin);
-  delay(2);
-  int clk2 = digitalRead(clkPin);
-  int dt1  = digitalRead(dtPin);
-  delay(2);
-  int dt2  = digitalRead(dtPin);
-
-  if (clk1 != clk2 || dt1 != dt2) {
-    return;
-  }
-
+  int clkNow = digitalRead(clkPin);
+  int dtNow  = digitalRead(dtPin);
   unsigned long now = millis();
-  if (clk2 != encPrevClkState && (now - encLastStepMs) >= 250) {
-    if (clk2 == LOW) {
-      if (dt2 != clk2) {
+
+  if (clkNow != encPrevClkState && (now - encLastStepMs) >= 5) {
+    if (clkNow == LOW) {
+      if (dtNow != clkNow) {
         targetTemp += 0.1f;
       } else {
         targetTemp -= 0.1f;
@@ -210,7 +202,7 @@ void stepEncoderTemp(float &targetTemp, float fallbackVal) {
       encLastStepMs = now;
     }
   }
-  encPrevClkState = clk2;
+  encPrevClkState = clkNow;
 }
 
 void clampTempLimits() {
