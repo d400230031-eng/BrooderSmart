@@ -424,35 +424,38 @@ void handleRotaryEncoder() {
     updateOled();
   }
   lastEncSw = swVal;
-
+  static unsigned long lastEncStepMs = 0;
   int clkVal = digitalRead(ENC_CLK);
-  if (clkVal != lastEncClk && clkVal == LOW) {
-    bool clockwise = (digitalRead(ENC_DT) != clkVal);
-    if (encMenuState == ENC_SET_MAX) {
-    if (isnan(maxTemp)) maxTemp = 33.5f;
-      if (clockwise) {
-        maxTemp = roundf((maxTemp + 0.1f) * 10.0f) / 10.0f;
-      } else {
-        maxTemp = roundf((maxTemp - 0.1f) * 10.0f) / 10.0f;
-        if (maxTemp <= minTemp) maxTemp = roundf((minTemp + 0.1f) * 10.0f) / 10.0f;
+  int dtVal  = digitalRead(ENC_DT);
+  if (clkVal != lastEncClk && (now - lastEncStepMs) >= 10) {
+    lastEncStepMs = now;
+    // Saat transisi falling edge (HIGH -> LOW), baca DT untuk menentukan arah
+    if (clkVal == LOW) {
+      bool clockwise = (dtVal == HIGH);
+      if (encMenuState == ENC_SET_MAX) {
+        if (isnan(maxTemp)) maxTemp = 33.5f;
+        maxTemp = roundf((maxTemp + (clockwise ? 0.1f : -0.1f)) * 10.0f) / 10.0f;
+        if (!isnan(minTemp) && maxTemp <= minTemp) {
+          maxTemp = roundf((minTemp + 0.1f) * 10.0f) / 10.0f;
+        }
+        clampTempLimits();
+        Serial.printf("[ENC] SET_MAX clk=%d dt=%d dir=%s max=%.1f\n", clkVal, dtVal, clockwise ? "CW" : "CCW", maxTemp);
+        updateOled();
+        publishTelemetry();
+      } else if (encMenuState == ENC_SET_MIN) {
+        if (isnan(minTemp)) minTemp = 32.5f;
+        minTemp = roundf((minTemp + (clockwise ? 0.1f : -0.1f)) * 10.0f) / 10.0f;
+        if (!isnan(maxTemp) && minTemp >= maxTemp) {
+          minTemp = roundf((maxTemp - 0.1f) * 10.0f) / 10.0f;
+        }
+        clampTempLimits();
+        Serial.printf("[ENC] SET_MIN clk=%d dt=%d dir=%s min=%.1f\n", clkVal, dtVal, clockwise ? "CW" : "CCW", minTemp);
+        updateOled();
+        publishTelemetry();
       }
-  clampTempLimits();
-      updateOled();
-      publishTelemetry();
-    } else if (encMenuState == ENC_SET_MIN) {
-    if (isnan(minTemp)) minTemp = 32.5f;
-      if (clockwise) {
-        minTemp = roundf((minTemp + 0.1f) * 10.0f) / 10.0f;
-        if (minTemp >= maxTemp) minTemp = roundf((maxTemp - 0.1f) * 10.0f) / 10.0f;
-      } else {
-        minTemp = roundf((minTemp - 0.1f) * 10.0f) / 10.0f;
-      }
-  clampTempLimits();
-      updateOled();
-      publishTelemetry();
     }
+    lastEncClk = clkVal;
   }
-  lastEncClk = clkVal;
 }
 
 bool initCamera() {
