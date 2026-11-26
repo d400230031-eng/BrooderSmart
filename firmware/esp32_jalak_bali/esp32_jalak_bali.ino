@@ -402,7 +402,14 @@ void applyAutoControl() {
   }
 }
 
-void handleRotaryEncoder() {
+void handleRotaryEncoder() {\n  static int dbgLastClk = -99, dbgLastDt = -99;
+  int dbgClk = digitalRead(ENC_CLK);
+  int dbgDt  = digitalRead(ENC_DT);
+  if (dbgClk != dbgLastClk || dbgDt != dbgLastDt) {
+    Serial.printf("[PIN] CLK=%d DT=%d menu=%d max=%.1f min=%.1f\n", dbgClk, dbgDt, (int)encMenuState, maxTemp, minTemp);
+    dbgLastClk = dbgClk;
+    dbgLastDt  = dbgDt;
+  }
   unsigned long now = millis();
   int swVal = digitalRead(ENC_SW);
   if (lastEncSw == HIGH && swVal == LOW && (now - lastSwMs > 250)) {
