@@ -218,6 +218,47 @@ void clampTempLimits() {
   }
 }
 
+static int lastClkRead = -999;
+static unsigned long lastRotMs = 0;
+
+float applyEncoderDelta(float currentVal, float fallbackVal) {
+  const int clkPin = 1;
+  const int dtPin  = 2;
+
+  pinMode(clkPin, INPUT_PULLUP);
+  pinMode(dtPin, INPUT_PULLUP);
+
+  if (isnan(currentVal)) currentVal = fallbackVal;
+  if (currentVal < 25.0f) currentVal = 25.0f;
+  if (currentVal > 50.0f) currentVal = 50.0f;
+
+  int clkVal = digitalRead(clkPin);
+  int dtVal  = digitalRead(dtPin);
+
+  if (lastClkRead == -999) {
+    lastClkRead = clkVal;
+    return roundf(currentVal * 10.0f) / 10.0f;
+  }
+
+  unsigned long now = millis();
+  if (clkVal != lastClkRead && (now - lastRotMs) >= 15) {
+    if (clkVal == LOW) {
+      if (dtVal != clkVal) {
+        currentVal += 0.1f;
+      } else {
+        currentVal -= 0.1f;
+      }
+      if (currentVal < 25.0f) currentVal = 25.0f;
+      if (currentVal > 50.0f) currentVal = 50.0f;
+      currentVal = roundf(currentVal * 10.0f) / 10.0f;
+      lastRotMs = now;
+    }
+    lastClkRead = clkVal;
+  }
+
+  return currentVal;
+}
+
 void updateOled() {
   if (!oledReady) return;
   display.clearDisplay();
